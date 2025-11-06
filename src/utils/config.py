@@ -17,6 +17,7 @@ class Config:
     
     # API Configuration
     COINGECKO_API_KEY = os.getenv('COINGECKO_API_KEY', None)
+    SOSOVALUE_API_KEY = os.getenv('SOSOVALUE_API_KEY', None)
     RATE_LIMIT_DELAY = float(os.getenv('RATE_LIMIT_DELAY', '1.5'))
     
     # Data Retention
@@ -58,6 +59,7 @@ class Config:
             'LOG_LEVEL': cls.LOG_LEVEL,
             'ENABLE_CSV_BACKUP': cls.ENABLE_CSV_BACKUP,
             'TRACKED_ASSETS': cls.TRACKED_ASSETS,
-            'HAS_COINGECKO_API_KEY': cls.COINGECKO_API_KEY is not None
+            'HAS_COINGECKO_API_KEY': cls.COINGECKO_API_KEY is not None,
+            'HAS_SOSOVALUE_API_KEY': cls.SOSOVALUE_API_KEY is not None
         }
 

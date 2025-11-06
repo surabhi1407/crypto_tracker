@@ -70,13 +70,33 @@ class CSVBackup:
     
     def save_sentiment_backup(self, data: List[Dict[str, Any]]) -> Path:
         """Save sentiment data backup"""
+        # Remove extra fields that aren't needed for backup
+        cleaned_data = [
+            {
+                'as_of_date': d['as_of_date'],
+                'fng_value': d['fng_value'],
+                'classification': d['classification']
+            }
+            for d in data
+        ]
         fieldnames = ['as_of_date', 'fng_value', 'classification']
-        return self.save_to_csv(data, 'sentiment_daily', fieldnames)
+        return self.save_to_csv(cleaned_data, 'sentiment_daily', fieldnames)
     
     def save_etf_backup(self, data: List[Dict[str, Any]]) -> Path:
         """Save ETF flow data backup"""
+        # Clean data to only include fields we want in CSV
+        cleaned_data = [
+            {
+                'as_of_date': d['as_of_date'],
+                'ticker': d['ticker'],
+                'net_flow_usd': d.get('net_flow_usd'),
+                'aum_usd': d.get('aum_usd'),
+                'source': d.get('source', 'UNKNOWN')
+            }
+            for d in data
+        ]
         fieldnames = ['as_of_date', 'ticker', 'net_flow_usd', 'aum_usd', 'source']
-        return self.save_to_csv(data, 'etf_flows_daily', fieldnames)
+        return self.save_to_csv(cleaned_data, 'etf_flows_daily', fieldnames)
     
     def cleanup_old_backups(self, days_to_keep: int = 30) -> int:
         """

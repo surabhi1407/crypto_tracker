@@ -10,11 +10,10 @@ logger = setup_logger()
 
 class ETFFlowsConnector(BaseConnector):
     """
-    Connector for ETF flow data
+    Connector for ETF flow data from SoSoValue API
     
-    Note: SoSoValue API may require authentication or have specific endpoints.
-    This is a template implementation that may need adjustment based on actual API.
-    For Phase 1, we'll use a mock/placeholder structure.
+    Uses SoSoValue's official API to fetch real Bitcoin and Ethereum ETF flow data.
+    API Documentation: https://sosovalue.gitbook.io/soso-value-api-doc/
     """
     
     def __init__(self, api_key: str = None, rate_limit_delay: float = 1.5):
@@ -22,74 +21,108 @@ class ETFFlowsConnector(BaseConnector):
         Initialize ETF Flows connector
         
         Args:
-            api_key: API key if required
+            api_key: SoSoValue API key (required)
             rate_limit_delay: Delay between requests
         """
-        # Placeholder - actual endpoint TBD
-        base_url = "https://api.sosovalue.com"  # Example, may not be real
+        base_url = "https://api.sosovalue.xyz"
         super().__init__(base_url, rate_limit_delay)
         
+        self.api_key = api_key
         if api_key:
-            self.session.headers.update({'Authorization': f'Bearer {api_key}'})
+            self.session.headers.update({
+                'x-soso-api-key': api_key,
+                'Content-Type': 'application/json'
+            })
     
     def fetch_etf_flows(
         self,
         start_date: str = None,
         end_date: str = None,
-        days: int = 30
+        days: int = 30,
+        etf_type: str = "us-btc-spot"
     ) -> List[Dict[str, Any]]:
         """
-        Fetch ETF flow data
+        Fetch real ETF flow data from SoSoValue API
         
         Args:
-            start_date: Start date in YYYY-MM-DD format
-            end_date: End date in YYYY-MM-DD format
-            days: Number of days to fetch if dates not provided
+            start_date: Start date in YYYY-MM-DD format (not used, API returns last 300 days)
+            end_date: End date in YYYY-MM-DD format (not used, API returns last 300 days)
+            days: Number of days to fetch (max 300 from API)
+            etf_type: "us-btc-spot" or "us-eth-spot"
         
         Returns:
             List of dictionaries with ETF flow data
         """
-        logger.info(f"Fetching ETF flows for last {days} days")
+        if not self.api_key:
+            logger.error("SoSoValue API key not configured!")
+            logger.error("Get your free API key at: https://sosovalue.xyz/")
+            logger.error("Add to .env: SOSOVALUE_API_KEY=your_key_here")
+            return []
         
-        # For Phase 1, return mock data structure
-        # This should be replaced with actual API call when endpoint is available
-        logger.warning("ETF Flows connector using mock data - implement actual API")
+        logger.info(f"Fetching real {etf_type} ETF flows from SoSoValue API")
         
-        return self._generate_mock_etf_data(days)
-    
-    def _generate_mock_etf_data(self, days: int = 30) -> List[Dict[str, Any]]:
-        """
-        Generate mock ETF flow data for testing
-        
-        Args:
-            days: Number of days of mock data
-        
-        Returns:
-            List of mock ETF flow records
-        """
-        mock_data = []
-        
-        # Common Bitcoin ETF tickers
-        tickers = ['IBIT', 'FBTC', 'GBTC', 'BITB', 'ARKB']
-        
-        for i in range(days):
-            date = (get_utc_now() - timedelta(days=days-i)).strftime('%Y-%m-%d')
+        try:
+            endpoint = "/openapi/v2/etf/historicalInflowChart"
             
-            for ticker in tickers:
-                # Generate realistic-looking flow data
-                import random
-                base_flow = random.uniform(-50, 150)  # Millions USD
-                
-                mock_data.append({
-                    'as_of_date': date,
-                    'ticker': ticker,
-                    'net_flow_usd': round(base_flow * 1_000_000, 2),
-                    'aum_usd': round(random.uniform(500, 5000) * 1_000_000, 2),
-                    'source': 'MOCK'
-                })
-        
-        logger.info(f"Generated {len(mock_data)} mock ETF flow records")
-        return mock_data
+            # SoSoValue uses POST with JSON body
+            import json
+            payload = {"type": etf_type}
+            
+            # Override the base _make_request for POST
+            response = self.session.post(
+                f"{self.base_url}{endpoint}",
+                json=payload,
+                timeout=30
+            )
+            response.raise_for_status()
+            
+            # Rate limiting
+            import time
+            time.sleep(self.rate_limit_delay)
+            
+            data = response.json()
+            
+            # Check API response
+            if data.get('code') != 0:
+                logger.error(f"SoSoValue API error: {data.get('msg', 'Unknown error')}")
+                return []
+            
+            # Parse and normalize data
+            normalized = []
+            
+            # Handle response structure - data.list is an array
+            data_obj = data.get('data', {})
+            if isinstance(data_obj, dict):
+                etf_list = data_obj.get('list', [])
+            elif isinstance(data_obj, list):
+                etf_list = data_obj
+            else:
+                logger.error(f"Unexpected data structure: {type(data_obj)}")
+                return []
+            
+            # Limit to requested days
+            etf_list = etf_list[:days] if days < len(etf_list) else etf_list
+            
+            for entry in etf_list:
+                try:
+                    normalized.append({
+                        'as_of_date': entry.get('date', ''),
+                        'ticker': etf_type.upper().replace('-', '_'),  # Use type as ticker
+                        'net_flow_usd': float(entry.get('totalNetInflow', 0) or 0),
+                        'aum_usd': float(entry.get('totalNetAssets', 0) or 0),
+                        'total_value_traded': float(entry.get('totalValueTraded', 0) or 0),
+                        'cumulative_net_inflow': float(entry.get('cumNetInflow', 0) or 0),
+                        'source': 'SOSOVALUE'
+                    })
+                except (KeyError, ValueError, TypeError) as e:
+                    logger.warning(f"Skipping malformed entry: {e}")
+            
+            logger.info(f"Successfully fetched {len(normalized)} real ETF flow records from SoSoValue")
+            return normalized
+            
+        except Exception as e:
+            logger.error(f"Failed to fetch ETF flows from SoSoValue: {e}")
+            return []
     
     def fetch_daily_aggregate(self, date: str = None) -> Dict[str, Any]:
         """
@@ -106,8 +139,14 @@ class ETFFlowsConnector(BaseConnector):
         
         logger.info(f"Fetching aggregate ETF flows for {date}")
         
-        # Mock implementation
-        flows = self._generate_mock_etf_data(days=1)
+        flows = self.fetch_etf_flows(days=1)
+        if not flows:
+            return {
+                'as_of_date': date,
+                'total_net_flow_usd': 0,
+                'num_etfs': 0
+            }
+        
         total_flow = sum(f['net_flow_usd'] for f in flows if f['as_of_date'] == date)
         
         return {
@@ -116,17 +155,40 @@ class ETFFlowsConnector(BaseConnector):
             'num_etfs': len([f for f in flows if f['as_of_date'] == date])
         }
     
-    def fetch_data(self) -> List[Dict[str, Any]]:
+    def fetch_data(self, days: int = 7) -> List[Dict[str, Any]]:
         """
-        Main fetch method - gets 30 days of ETF flow data
+        Main fetch method - gets recent BTC ETF flow data
+        
+        Args:
+            days: Number of days to fetch (default: 7 for daily updates)
         
         Returns:
-            List of ETF flow records
+            List of ETF flow records from SoSoValue API
         """
-        return self.fetch_etf_flows(days=30)
-
-
-# TODO: Replace mock implementation with actual SoSoValue or Farside API
-# when endpoint details are available. For now, this provides the structure
-# needed for the database schema and pipeline testing.
+        # Fetch Bitcoin ETF flows
+        # Use 7 days by default to ensure we catch any missed days
+        # API returns 300 days but we only store what's new (idempotent)
+        return self.fetch_etf_flows(days=days, etf_type="us-btc-spot")
+    
+    def fetch_both_btc_and_eth(self, days: int = 30) -> List[Dict[str, Any]]:
+        """
+        Fetch both Bitcoin and Ethereum ETF flows
+        
+        Args:
+            days: Number of days to fetch
+        
+        Returns:
+            Combined list of BTC and ETH ETF flow records
+        """
+        all_flows = []
+        
+        # Fetch BTC ETF flows
+        btc_flows = self.fetch_etf_flows(days=days, etf_type="us-btc-spot")
+        all_flows.extend(btc_flows)
+        
+        # Fetch ETH ETF flows
+        eth_flows = self.fetch_etf_flows(days=days, etf_type="us-eth-spot")
+        all_flows.extend(eth_flows)
+        
+        return all_flows
 

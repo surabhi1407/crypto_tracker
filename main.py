@@ -23,11 +23,24 @@ from src.utils.logger import setup_logger
 logger = setup_logger()
 
 
-def run_ingestion():
-    """Run the full ingestion pipeline"""
-    logger.info("Starting ingestion via main.py")
+def run_ingestion(backfill=False):
+    """
+    Run the full ingestion pipeline
+    
+    Args:
+        backfill: If True, fetch full historical data (300 days ETF, 30 days sentiment)
+                  If False, fetch recent data only (7 days ETF, 7 days sentiment)
+    """
+    mode = "BACKFILL" if backfill else "DAILY SYNC"
+    logger.info(f"Starting ingestion via main.py - Mode: {mode}")
     pipeline = IngestionPipeline()
-    results = pipeline.run_full_ingestion()
+    
+    if backfill:
+        logger.info("Running BACKFILL mode - fetching full historical data")
+        results = pipeline.run_full_ingestion(etf_days=300, sentiment_days=30)
+    else:
+        logger.info("Running DAILY SYNC mode - fetching recent data only")
+        results = pipeline.run_full_ingestion(etf_days=7, sentiment_days=7)
     
     # Print summary to console
     print("\n" + "=" * 70)
@@ -101,6 +114,12 @@ For more information, see AGENTS.md
     )
     
     parser.add_argument(
+        '--backfill',
+        action='store_true',
+        help='Run initial backfill (300 days ETF, 30 days sentiment). Use this for first run only.'
+    )
+    
+    parser.add_argument(
         '--version',
         action='version',
         version='Crypto Market Intelligence Dashboard v0.1.0 (Phase 1)'
@@ -112,7 +131,7 @@ For more information, see AGENTS.md
         if args.status:
             return show_status()
         else:
-            return run_ingestion()
+            return run_ingestion(backfill=args.backfill)
     
     except KeyboardInterrupt:
         print("\n\n⚠️  Ingestion interrupted by user")
