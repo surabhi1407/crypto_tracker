@@ -32,48 +32,67 @@ class CoinGeckoConnector(BaseConnector):
         days: int = 14
     ) -> List[Dict[str, Any]]:
         """
-        Fetch hourly OHLC data for a cryptocurrency
+        Fetch hourly price data for a cryptocurrency using market_chart endpoint
         
         Args:
             coin_id: CoinGecko coin ID (e.g., 'bitcoin', 'ethereum')
             vs_currency: Target currency (default: 'usd')
-            days: Number of days to fetch (max 90 for hourly)
+            days: Number of days to fetch
         
         Returns:
-            List of dictionaries with normalized OHLC data
+            List of dictionaries with normalized price data
         """
-        logger.info(f"Fetching {days}-day hourly OHLC for {coin_id}")
-        
-        endpoint = f"/coins/{coin_id}/ohlc"
-        params = {
-            'vs_currency': vs_currency,
-            'days': min(days, 90)  # API limit
-        }
+        logger.info(f"Fetching {days}-day price data for {coin_id}")
         
         try:
-            data = self._make_request(endpoint, params)
+            # Use direct requests instead of base connector to match app.py behavior
+            import requests
+            import time
             
-            # Normalize data
+            url = f"{self.base_url}/coins/{coin_id}/market_chart"
+            params = {
+                'vs_currency': vs_currency,
+                'days': days
+            }
+            
+            response = requests.get(url, params=params, timeout=30)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            # Rate limiting
+            time.sleep(self.rate_limit_delay)
+            
+            if 'prices' not in data:
+                logger.error(f"No price data in response for {coin_id}")
+                return []
+            
+            # Normalize data from market_chart format
+            # market_chart returns [timestamp, price] pairs
             normalized = []
-            for entry in data:
-                ts_ms, open_price, high, low, close = entry
+            prices = data['prices']
+            
+            for price_entry in prices:
+                ts_ms, price = price_entry
                 dt_utc = timestamp_to_utc(ts_ms)
                 
+                # For market_chart, we use price as close
+                # Open/high/low are approximated (same as close for simplicity)
                 normalized.append({
                     'asset': coin_id.upper(),
                     'ts_utc': dt_utc,
-                    'open': open_price,
-                    'high': high,
-                    'low': low,
-                    'close': close,
+                    'open': price,
+                    'high': price,
+                    'low': price,
+                    'close': price,
                     'session': classify_trading_session(dt_utc.hour)
                 })
             
-            logger.info(f"Successfully fetched {len(normalized)} hourly records for {coin_id}")
+            logger.info(f"Successfully fetched {len(normalized)} price records for {coin_id}")
             return normalized
             
         except Exception as e:
-            logger.error(f"Failed to fetch OHLC for {coin_id}: {e}")
+            logger.error(f"Failed to fetch price data for {coin_id}: {e}")
             return []
     
     def fetch_current_price(

@@ -32,6 +32,7 @@ class IngestionPipeline:
             rate_limit_delay=Config.RATE_LIMIT_DELAY
         )
         self.etf_flows = ETFFlowsConnector(
+            api_key=Config.SOSOVALUE_API_KEY,
             rate_limit_delay=Config.RATE_LIMIT_DELAY
         )
         
@@ -92,18 +93,21 @@ class IngestionPipeline:
         
         return stats
     
-    def ingest_sentiment_data(self) -> Dict[str, Any]:
+    def ingest_sentiment_data(self, days: int = 7) -> Dict[str, Any]:
         """
         Ingest Fear & Greed sentiment data
+        
+        Args:
+            days: Number of days to fetch (default: 7 for daily sync)
         
         Returns:
             Dictionary with ingestion statistics
         """
-        logger.info("Starting sentiment data ingestion")
+        logger.info(f"Starting sentiment data ingestion (last {days} days)")
         stats = {'success': False, 'records': 0, 'errors': []}
         
         try:
-            records = self.fear_greed.fetch_fear_greed_index(limit=30)
+            records = self.fear_greed.fetch_fear_greed_index(limit=days)
             
             if records:
                 # Insert into database
@@ -125,18 +129,21 @@ class IngestionPipeline:
         
         return stats
     
-    def ingest_etf_flows(self) -> Dict[str, Any]:
+    def ingest_etf_flows(self, days: int = 7) -> Dict[str, Any]:
         """
         Ingest ETF flow data
+        
+        Args:
+            days: Number of days to fetch (default: 7 for daily sync)
         
         Returns:
             Dictionary with ingestion statistics
         """
-        logger.info("Starting ETF flows ingestion")
+        logger.info(f"Starting ETF flows ingestion (last {days} days)")
         stats = {'success': False, 'records': 0, 'errors': []}
         
         try:
-            records = self.etf_flows.fetch_etf_flows(days=30)
+            records = self.etf_flows.fetch_etf_flows(days=days)
             
             if records:
                 # Insert into database
@@ -194,15 +201,20 @@ class IngestionPipeline:
         
         return stats
     
-    def run_full_ingestion(self) -> Dict[str, Any]:
+    def run_full_ingestion(self, etf_days: int = 7, sentiment_days: int = 7) -> Dict[str, Any]:
         """
         Run complete ingestion pipeline
+        
+        Args:
+            etf_days: Number of days of ETF data to fetch (default: 7 for daily sync, 300 for backfill)
+            sentiment_days: Number of days of sentiment data to fetch (default: 7 for daily sync, 30 for backfill)
         
         Returns:
             Dictionary with overall statistics
         """
         logger.info("=" * 60)
         logger.info("STARTING FULL INGESTION PIPELINE")
+        logger.info(f"Mode: ETF={etf_days} days, Sentiment={sentiment_days} days")
         logger.info("=" * 60)
         
         start_time = datetime.now()
@@ -210,6 +222,7 @@ class IngestionPipeline:
         results = {
             'timestamp': start_time.isoformat(),
             'config': Config.display(),
+            'mode': 'BACKFILL' if etf_days > 30 else 'DAILY_SYNC',
             'ohlc': {},
             'sentiment': {},
             'etf_flows': {},
@@ -222,12 +235,12 @@ class IngestionPipeline:
         results['ohlc'] = self.ingest_ohlc_data()
         
         # Step 2: Ingest sentiment data
-        logger.info("\n[2/4] Ingesting sentiment data...")
-        results['sentiment'] = self.ingest_sentiment_data()
+        logger.info(f"\n[2/4] Ingesting sentiment data (last {sentiment_days} days)...")
+        results['sentiment'] = self.ingest_sentiment_data(days=sentiment_days)
         
         # Step 3: Ingest ETF flows
-        logger.info("\n[3/4] Ingesting ETF flows...")
-        results['etf_flows'] = self.ingest_etf_flows()
+        logger.info(f"\n[3/4] Ingesting ETF flows (last {etf_days} days)...")
+        results['etf_flows'] = self.ingest_etf_flows(days=etf_days)
         
         # Step 4: Compute daily snapshots
         logger.info("\n[4/4] Computing daily snapshots...")

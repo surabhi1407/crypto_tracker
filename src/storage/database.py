@@ -210,7 +210,10 @@ class MarketDatabase:
             volatility AS (
                 SELECT 
                     asset,
-                    STDEV(close) / AVG(close) * 100 as realized_vol_7d_pct
+                    -- SQLite doesn't have STDEV, so we calculate manually
+                    -- Coefficient of variation: (stddev / mean) * 100
+                    -- stddev = sqrt(avg(x^2) - avg(x)^2)
+                    (SQRT(AVG(close * close) - AVG(close) * AVG(close)) / AVG(close)) * 100 as realized_vol_7d_pct
                 FROM ohlc_hourly
                 WHERE ts_utc >= DATE(?, '-7 days')
                   AND ts_utc <= DATE(?)
