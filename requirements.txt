@@ -1,0 +1,12 @@
+# Core Dependencies
+requests>=2.31.0
+pandas>=2.1.0
+python-dotenv>=1.0.0
+
+# Visualization (existing Streamlit app)
+streamlit>=1.28.0
+altair>=5.1.0
+
+# Utilities
+pytz>=2023.3
+
