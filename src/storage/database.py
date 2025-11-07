@@ -171,7 +171,7 @@ class MarketDatabase:
     
     def compute_daily_snapshot(self, as_of_date: str) -> None:
         """
-        Compute and store daily market snapshot from raw data
+        Compute and store daily market snapshot from raw data (Phase 1 + Phase 2)
         
         Args:
             as_of_date: Date in YYYY-MM-DD format
@@ -180,9 +180,10 @@ class MarketDatabase:
         
         sql = """
             INSERT OR REPLACE INTO daily_market_snapshot
-            (as_of_date, asset, price_close_usd, price_chg_24h_pct, 
+            (as_of_date, asset, price_close_usd, price_chg_24h_pct, volume_24h_usd,
              realized_vol_7d_pct, fng_value, fng_classification, 
-             etf_net_flow_usd, dominant_session)
+             etf_net_flow_usd, dominant_session, btc_dominance_pct, market_cap_usd,
+             avg_funding_rate_pct, open_interest_usd)
             
             WITH latest_prices AS (
                 SELECT 
@@ -230,6 +231,33 @@ class MarketDatabase:
                 SELECT SUM(net_flow_usd) as etf_net_flow_usd
                 FROM etf_flows_daily
                 WHERE as_of_date = ?
+            ),
+            
+            market_metrics AS (
+                SELECT 
+                    asset,
+                    volume_24h_usd,
+                    market_cap_usd,
+                    btc_dominance_pct
+                FROM market_metrics_daily
+                WHERE as_of_date = ?
+            ),
+            
+            funding_agg AS (
+                SELECT 
+                    asset,
+                    AVG(funding_rate_pct) as avg_funding_rate_pct
+                FROM funding_rates_snapshots
+                WHERE DATE(ts_utc) = ?
+                GROUP BY asset
+            ),
+            
+            open_interest_agg AS (
+                SELECT 
+                    asset,
+                    open_interest_usd
+                FROM open_interest_daily
+                WHERE as_of_date = ?
             )
             
             SELECT 
@@ -237,13 +265,21 @@ class MarketDatabase:
                 pm.asset,
                 pm.price_close_usd,
                 pm.price_chg_24h_pct,
+                mm.volume_24h_usd,
                 v.realized_vol_7d_pct,
                 s.fng_value,
                 s.fng_classification,
                 e.etf_net_flow_usd,
-                'US' as dominant_session
+                'US' as dominant_session,
+                mm.btc_dominance_pct,
+                mm.market_cap_usd,
+                fr.avg_funding_rate_pct,
+                oi.open_interest_usd
             FROM price_metrics pm
             LEFT JOIN volatility v ON pm.asset = v.asset
+            LEFT JOIN market_metrics mm ON pm.asset = mm.asset
+            LEFT JOIN funding_agg fr ON pm.asset = fr.asset
+            LEFT JOIN open_interest_agg oi ON pm.asset = oi.asset
             CROSS JOIN sentiment s
             CROSS JOIN etf_agg e
         """
@@ -252,6 +288,7 @@ class MarketDatabase:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(sql, (as_of_date, as_of_date, as_of_date, 
+                                    as_of_date, as_of_date, as_of_date,
                                     as_of_date, as_of_date, as_of_date))
                 conn.commit()
                 logger.info(f"Daily snapshot computed for {as_of_date}")
@@ -278,10 +315,160 @@ class MarketDatabase:
             logger.error(f"Failed to get latest timestamp: {e}")
             return None
     
+    def insert_market_metrics(self, records: List[Dict[str, Any]]) -> int:
+        """
+        Insert market metrics data (volume, dominance, market cap) - idempotent
+        
+        Args:
+            records: List of market metrics with keys:
+                     as_of_date, asset, volume_24h_usd, market_cap_usd, 
+                     btc_dominance_pct, price_change_24h_pct, source
+        
+        Returns:
+            Number of records inserted/updated
+        """
+        if not records:
+            logger.warning("No market metrics records to insert")
+            return 0
+        
+        sql = """
+            INSERT OR REPLACE INTO market_metrics_daily 
+            (as_of_date, asset, volume_24h_usd, market_cap_usd, 
+             btc_dominance_pct, price_change_24h_pct, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """
+        
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                data = [
+                    (
+                        r['as_of_date'],
+                        r['asset'],
+                        r.get('volume_24h_usd'),
+                        r.get('market_cap_usd'),
+                        r.get('btc_dominance_pct'),
+                        r.get('price_change_24h_pct'),
+                        r.get('source', 'COINGECKO')
+                    )
+                    for r in records
+                ]
+                
+                cursor.executemany(sql, data)
+                conn.commit()
+                
+                count = cursor.rowcount
+                logger.info(f"Inserted/updated {count} market metrics records")
+                return count
+                
+        except sqlite3.Error as e:
+            logger.error(f"Failed to insert market metrics: {e}")
+            raise
+    
+    def insert_funding_rates(self, records: List[Dict[str, Any]]) -> int:
+        """
+        Insert funding rate snapshots (idempotent)
+        
+        Args:
+            records: List of funding rate records with keys:
+                     ts_utc, asset, funding_rate_pct, funding_interval_hours,
+                     mark_price, source
+        
+        Returns:
+            Number of records inserted/updated
+        """
+        if not records:
+            logger.warning("No funding rate records to insert")
+            return 0
+        
+        sql = """
+            INSERT OR REPLACE INTO funding_rates_snapshots 
+            (ts_utc, asset, funding_rate_pct, funding_interval_hours, 
+             mark_price, source)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """
+        
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                data = [
+                    (
+                        r['ts_utc'],
+                        r['asset'],
+                        r['funding_rate_pct'],
+                        r.get('funding_interval_hours', 8),
+                        r.get('mark_price'),
+                        r.get('source', 'BINANCE')
+                    )
+                    for r in records
+                ]
+                
+                cursor.executemany(sql, data)
+                conn.commit()
+                
+                count = cursor.rowcount
+                logger.info(f"Inserted/updated {count} funding rate records")
+                return count
+                
+        except sqlite3.Error as e:
+            logger.error(f"Failed to insert funding rates: {e}")
+            raise
+    
+    def insert_open_interest(self, records: List[Dict[str, Any]]) -> int:
+        """
+        Insert open interest data (idempotent)
+        
+        Args:
+            records: List of open interest records with keys:
+                     as_of_date, asset, open_interest_usd, 
+                     open_interest_contracts, source
+        
+        Returns:
+            Number of records inserted/updated
+        """
+        if not records:
+            logger.warning("No open interest records to insert")
+            return 0
+        
+        sql = """
+            INSERT OR REPLACE INTO open_interest_daily 
+            (as_of_date, asset, open_interest_usd, open_interest_contracts, source)
+            VALUES (?, ?, ?, ?, ?)
+        """
+        
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                data = [
+                    (
+                        r['as_of_date'],
+                        r['asset'],
+                        r['open_interest_usd'],
+                        r.get('open_interest_contracts'),
+                        r.get('source', 'BINANCE')
+                    )
+                    for r in records
+                ]
+                
+                cursor.executemany(sql, data)
+                conn.commit()
+                
+                count = cursor.rowcount
+                logger.info(f"Inserted/updated {count} open interest records")
+                return count
+                
+        except sqlite3.Error as e:
+            logger.error(f"Failed to insert open interest: {e}")
+            raise
+    
     def get_record_counts(self) -> Dict[str, int]:
         """Get record counts for all tables"""
         tables = ['ohlc_hourly', 'sentiment_daily', 'etf_flows_daily', 
-                  'daily_market_snapshot']
+                  'daily_market_snapshot', 'market_metrics_daily',
+                  'funding_rates_snapshots', 'open_interest_daily']
         counts = {}
         
         try:

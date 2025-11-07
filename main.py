@@ -49,13 +49,23 @@ def run_ingestion(backfill=False):
     print(f"✅ Overall Success: {results['overall_success']}")
     print(f"⏱️  Duration: {results['duration_seconds']:.2f} seconds")
     
-    print(f"\n📈 Data Ingested:")
+    print(f"\n📈 Phase 1 Data:")
     print(f"   • OHLC Records: {results['ohlc']['records']} "
           f"({'✅' if results['ohlc']['success'] else '❌'})")
     print(f"   • Sentiment Records: {results['sentiment']['records']} "
           f"({'✅' if results['sentiment']['success'] else '❌'})")
     print(f"   • ETF Flow Records: {results['etf_flows']['records']} "
           f"({'✅' if results['etf_flows']['success'] else '❌'})")
+    
+    print(f"\n📊 Phase 2 Data:")
+    print(f"   • Market Metrics: {results['market_metrics']['records']} "
+          f"({'✅' if results['market_metrics']['success'] else '⏭️' if results['market_metrics'].get('skipped') else '❌'})")
+    print(f"   • Funding Rates: {results['funding_rates']['records']} "
+          f"({'✅' if results['funding_rates']['success'] else '⏭️' if results['funding_rates'].get('skipped') else '❌'})")
+    print(f"   • Open Interest: {results['open_interest']['records']} "
+          f"({'✅' if results['open_interest']['success'] else '⏭️' if results['open_interest'].get('skipped') else '❌'})")
+    
+    print(f"\n🔄 Processing:")
     print(f"   • Daily Snapshots: {results['snapshots']['snapshots']} "
           f"({'✅' if results['snapshots']['success'] else '❌'})")
     

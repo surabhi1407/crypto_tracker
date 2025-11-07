@@ -11,7 +11,7 @@ class DatabaseSchema:
     """Manages database schema creation and migrations"""
     
     # Schema version for future migrations
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2  # Updated for Phase 2
     
     # Table creation SQL statements
     TABLES = {
@@ -53,6 +53,48 @@ class DatabaseSchema:
             )
         """,
         
+        'market_metrics_daily': """
+            CREATE TABLE IF NOT EXISTS market_metrics_daily (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                as_of_date DATE NOT NULL,
+                asset TEXT NOT NULL,
+                volume_24h_usd REAL,
+                market_cap_usd REAL,
+                btc_dominance_pct REAL,
+                price_change_24h_pct REAL,
+                source TEXT DEFAULT 'COINGECKO',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(as_of_date, asset)
+            )
+        """,
+        
+        'funding_rates_snapshots': """
+            CREATE TABLE IF NOT EXISTS funding_rates_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts_utc TIMESTAMP NOT NULL,
+                asset TEXT NOT NULL,
+                funding_rate_pct REAL NOT NULL,
+                funding_interval_hours INTEGER DEFAULT 8,
+                mark_price REAL,
+                source TEXT DEFAULT 'BINANCE',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(ts_utc, asset, source)
+            )
+        """,
+        
+        'open_interest_daily': """
+            CREATE TABLE IF NOT EXISTS open_interest_daily (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                as_of_date DATE NOT NULL,
+                asset TEXT NOT NULL,
+                open_interest_usd REAL NOT NULL,
+                open_interest_contracts REAL,
+                source TEXT DEFAULT 'BINANCE',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(as_of_date, asset, source)
+            )
+        """,
+        
         'daily_market_snapshot': """
             CREATE TABLE IF NOT EXISTS daily_market_snapshot (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,6 +108,10 @@ class DatabaseSchema:
                 fng_classification TEXT,
                 etf_net_flow_usd REAL,
                 dominant_session TEXT,
+                btc_dominance_pct REAL,
+                market_cap_usd REAL,
+                avg_funding_rate_pct REAL,
+                open_interest_usd REAL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(as_of_date, asset)
             )
@@ -81,6 +127,7 @@ class DatabaseSchema:
     
     # Index definitions for query performance
     INDEXES = [
+        # Phase 1 indexes
         "CREATE INDEX IF NOT EXISTS idx_ohlc_asset_ts ON ohlc_hourly(asset, ts_utc)",
         "CREATE INDEX IF NOT EXISTS idx_ohlc_ts ON ohlc_hourly(ts_utc)",
         "CREATE INDEX IF NOT EXISTS idx_sentiment_date ON sentiment_daily(as_of_date)",
@@ -88,6 +135,14 @@ class DatabaseSchema:
         "CREATE INDEX IF NOT EXISTS idx_etf_ticker ON etf_flows_daily(ticker)",
         "CREATE INDEX IF NOT EXISTS idx_snapshot_date ON daily_market_snapshot(as_of_date)",
         "CREATE INDEX IF NOT EXISTS idx_snapshot_asset ON daily_market_snapshot(asset)",
+        
+        # Phase 2 indexes
+        "CREATE INDEX IF NOT EXISTS idx_market_metrics_date ON market_metrics_daily(as_of_date)",
+        "CREATE INDEX IF NOT EXISTS idx_market_metrics_asset ON market_metrics_daily(asset)",
+        "CREATE INDEX IF NOT EXISTS idx_funding_ts ON funding_rates_snapshots(ts_utc)",
+        "CREATE INDEX IF NOT EXISTS idx_funding_asset ON funding_rates_snapshots(asset)",
+        "CREATE INDEX IF NOT EXISTS idx_oi_date ON open_interest_daily(as_of_date)",
+        "CREATE INDEX IF NOT EXISTS idx_oi_asset ON open_interest_daily(asset)",
     ]
     
     def __init__(self, db_path: str):
