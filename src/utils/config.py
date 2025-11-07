@@ -20,6 +20,16 @@ class Config:
     SOSOVALUE_API_KEY = os.getenv('SOSOVALUE_API_KEY', None)
     RATE_LIMIT_DELAY = float(os.getenv('RATE_LIMIT_DELAY', '1.5'))
     
+    # Binance Futures API (Phase 2)
+    BINANCE_FUTURES_BASE_URL = os.getenv('BINANCE_FUTURES_BASE_URL', 'https://fapi.binance.com')
+    BINANCE_RATE_LIMIT_WEIGHT = int(os.getenv('BINANCE_RATE_LIMIT_WEIGHT', '1200'))
+    
+    # Symbol mappings for Binance Futures
+    BINANCE_SYMBOLS = {
+        'bitcoin': 'BTCUSDT',
+        'ethereum': 'ETHUSDT'
+    }
+    
     # Data Retention
     DATA_RETENTION_DAYS = int(os.getenv('DATA_RETENTION_DAYS', '365'))
     
@@ -36,6 +46,10 @@ class Config:
     
     # Assets to track
     TRACKED_ASSETS = ['bitcoin', 'ethereum']
+    
+    # Phase 2 Feature Flags
+    ENABLE_MARKET_METRICS = os.getenv('ENABLE_MARKET_METRICS', 'true').lower() == 'true'
+    ENABLE_DERIVATIVES_DATA = os.getenv('ENABLE_DERIVATIVES_DATA', 'true').lower() == 'true'
     
     @classmethod
     def validate(cls) -> bool:
@@ -60,6 +74,9 @@ class Config:
             'ENABLE_CSV_BACKUP': cls.ENABLE_CSV_BACKUP,
             'TRACKED_ASSETS': cls.TRACKED_ASSETS,
             'HAS_COINGECKO_API_KEY': cls.COINGECKO_API_KEY is not None,
-            'HAS_SOSOVALUE_API_KEY': cls.SOSOVALUE_API_KEY is not None
+            'HAS_SOSOVALUE_API_KEY': cls.SOSOVALUE_API_KEY is not None,
+            'ENABLE_MARKET_METRICS': cls.ENABLE_MARKET_METRICS,
+            'ENABLE_DERIVATIVES_DATA': cls.ENABLE_DERIVATIVES_DATA,
+            'BINANCE_FUTURES_BASE_URL': cls.BINANCE_FUTURES_BASE_URL
         }
 

@@ -4,6 +4,8 @@ from datetime import datetime
 from src.connectors.coingecko import CoinGeckoConnector
 from src.connectors.fear_greed import FearGreedConnector
 from src.connectors.etf_flows import ETFFlowsConnector
+from src.connectors.market_metrics import MarketMetricsConnector
+from src.connectors.binance_futures import BinanceFuturesConnector
 from src.storage.database import MarketDatabase
 from src.utils.csv_backup import CSVBackup
 from src.utils.config import Config
@@ -23,7 +25,7 @@ class IngestionPipeline:
         # Validate configuration
         Config.validate()
         
-        # Initialize connectors
+        # Initialize Phase 1 connectors
         self.coingecko = CoinGeckoConnector(
             api_key=Config.COINGECKO_API_KEY,
             rate_limit_delay=Config.RATE_LIMIT_DELAY
@@ -35,6 +37,23 @@ class IngestionPipeline:
             api_key=Config.SOSOVALUE_API_KEY,
             rate_limit_delay=Config.RATE_LIMIT_DELAY
         )
+        
+        # Initialize Phase 2 connectors
+        self.market_metrics = None
+        self.binance_futures = None
+        
+        if Config.ENABLE_MARKET_METRICS:
+            self.market_metrics = MarketMetricsConnector(
+                api_key=Config.COINGECKO_API_KEY,
+                rate_limit_delay=Config.RATE_LIMIT_DELAY
+            )
+            logger.info("Market metrics connector enabled")
+        
+        if Config.ENABLE_DERIVATIVES_DATA:
+            self.binance_futures = BinanceFuturesConnector(
+                rate_limit_delay=0.5
+            )
+            logger.info("Binance futures connector enabled")
         
         # Initialize database
         self.db = MarketDatabase(Config.DB_PATH)
@@ -165,6 +184,111 @@ class IngestionPipeline:
         
         return stats
     
+    def ingest_market_metrics(self) -> Dict[str, Any]:
+        """
+        Ingest market metrics (volume, dominance, market cap)
+        
+        Returns:
+            Dictionary with ingestion statistics
+        """
+        if not self.market_metrics:
+            logger.info("Market metrics connector disabled, skipping")
+            return {'success': True, 'records': 0, 'errors': [], 'skipped': True}
+        
+        logger.info("Starting market metrics ingestion")
+        stats = {'success': False, 'records': 0, 'errors': []}
+        
+        try:
+            records = self.market_metrics.fetch_data(
+                coin_ids=Config.TRACKED_ASSETS
+            )
+            
+            if records:
+                # Insert into database
+                count = self.db.insert_market_metrics(records)
+                stats['records'] = count
+                stats['success'] = True
+                
+                logger.info(f"Market metrics ingestion complete: {count} records")
+            else:
+                logger.warning("No market metrics data to ingest")
+            
+        except Exception as e:
+            logger.error(f"Market metrics ingestion failed: {e}")
+            stats['errors'].append(str(e))
+        
+        return stats
+    
+    def ingest_funding_rates(self) -> Dict[str, Any]:
+        """
+        Ingest funding rates from Binance Futures
+        
+        Returns:
+            Dictionary with ingestion statistics
+        """
+        if not self.binance_futures:
+            logger.info("Binance futures connector disabled, skipping funding rates")
+            return {'success': True, 'records': 0, 'errors': [], 'skipped': True}
+        
+        logger.info("Starting funding rates ingestion")
+        stats = {'success': False, 'records': 0, 'errors': []}
+        
+        try:
+            records = self.binance_futures.fetch_funding_rates_for_assets(
+                coin_ids=Config.TRACKED_ASSETS
+            )
+            
+            if records:
+                # Insert into database
+                count = self.db.insert_funding_rates(records)
+                stats['records'] = count
+                stats['success'] = True
+                
+                logger.info(f"Funding rates ingestion complete: {count} records")
+            else:
+                logger.warning("No funding rate data to ingest")
+            
+        except Exception as e:
+            logger.error(f"Funding rates ingestion failed: {e}")
+            stats['errors'].append(str(e))
+        
+        return stats
+    
+    def ingest_open_interest(self) -> Dict[str, Any]:
+        """
+        Ingest open interest from Binance Futures
+        
+        Returns:
+            Dictionary with ingestion statistics
+        """
+        if not self.binance_futures:
+            logger.info("Binance futures connector disabled, skipping open interest")
+            return {'success': True, 'records': 0, 'errors': [], 'skipped': True}
+        
+        logger.info("Starting open interest ingestion")
+        stats = {'success': False, 'records': 0, 'errors': []}
+        
+        try:
+            records = self.binance_futures.fetch_open_interest_for_assets(
+                coin_ids=Config.TRACKED_ASSETS
+            )
+            
+            if records:
+                # Insert into database
+                count = self.db.insert_open_interest(records)
+                stats['records'] = count
+                stats['success'] = True
+                
+                logger.info(f"Open interest ingestion complete: {count} records")
+            else:
+                logger.warning("No open interest data to ingest")
+            
+        except Exception as e:
+            logger.error(f"Open interest ingestion failed: {e}")
+            stats['errors'].append(str(e))
+        
+        return stats
+    
     def compute_snapshots(self, days: int = 7) -> Dict[str, Any]:
         """
         Compute daily market snapshots
@@ -203,7 +327,7 @@ class IngestionPipeline:
     
     def run_full_ingestion(self, etf_days: int = 7, sentiment_days: int = 7) -> Dict[str, Any]:
         """
-        Run complete ingestion pipeline
+        Run complete ingestion pipeline (Phase 1 + Phase 2)
         
         Args:
             etf_days: Number of days of ETF data to fetch (default: 7 for daily sync, 300 for backfill)
@@ -213,7 +337,7 @@ class IngestionPipeline:
             Dictionary with overall statistics
         """
         logger.info("=" * 60)
-        logger.info("STARTING FULL INGESTION PIPELINE")
+        logger.info("STARTING FULL INGESTION PIPELINE (PHASE 1 + PHASE 2)")
         logger.info(f"Mode: ETF={etf_days} days, Sentiment={sentiment_days} days")
         logger.info("=" * 60)
         
@@ -226,27 +350,48 @@ class IngestionPipeline:
             'ohlc': {},
             'sentiment': {},
             'etf_flows': {},
+            'market_metrics': {},
+            'funding_rates': {},
+            'open_interest': {},
             'snapshots': {},
             'overall_success': False
         }
         
+        # Phase 1 Ingestion
+        logger.info("\n=== PHASE 1: Core Market Data ===")
+        
         # Step 1: Ingest OHLC data
-        logger.info("\n[1/4] Ingesting OHLC data...")
+        logger.info("\n[1/7] Ingesting OHLC data...")
         results['ohlc'] = self.ingest_ohlc_data()
         
         # Step 2: Ingest sentiment data
-        logger.info(f"\n[2/4] Ingesting sentiment data (last {sentiment_days} days)...")
+        logger.info(f"\n[2/7] Ingesting sentiment data (last {sentiment_days} days)...")
         results['sentiment'] = self.ingest_sentiment_data(days=sentiment_days)
         
         # Step 3: Ingest ETF flows
-        logger.info(f"\n[3/4] Ingesting ETF flows (last {etf_days} days)...")
+        logger.info(f"\n[3/7] Ingesting ETF flows (last {etf_days} days)...")
         results['etf_flows'] = self.ingest_etf_flows(days=etf_days)
         
-        # Step 4: Compute daily snapshots
-        logger.info("\n[4/4] Computing daily snapshots...")
+        # Phase 2 Ingestion
+        logger.info("\n=== PHASE 2: Market Structure & Derivatives ===")
+        
+        # Step 4: Ingest market metrics
+        logger.info("\n[4/7] Ingesting market metrics (volume, dominance)...")
+        results['market_metrics'] = self.ingest_market_metrics()
+        
+        # Step 5: Ingest funding rates
+        logger.info("\n[5/7] Ingesting funding rates...")
+        results['funding_rates'] = self.ingest_funding_rates()
+        
+        # Step 6: Ingest open interest
+        logger.info("\n[6/7] Ingesting open interest...")
+        results['open_interest'] = self.ingest_open_interest()
+        
+        # Step 7: Compute daily snapshots
+        logger.info("\n[7/7] Computing daily snapshots...")
         results['snapshots'] = self.compute_snapshots(days=7)
         
-        # Overall success if at least OHLC and sentiment succeeded
+        # Overall success if at least Phase 1 core data succeeded
         results['overall_success'] = (
             results['ohlc']['success'] and 
             results['sentiment']['success']
