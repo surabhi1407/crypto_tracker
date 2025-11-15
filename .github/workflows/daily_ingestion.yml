@@ -1,0 +1,140 @@
+name: Daily Crypto Data Ingestion
+
+on:
+  # Run daily at 3 AM UTC (after all data sources update)
+  schedule:
+    - cron: '0 3 * * *'
+  
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Run mode'
+        required: false
+        default: 'daily'
+        type: choice
+        options:
+          - daily
+          - backfill
+
+jobs:
+  ingest-data:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+      
+      - name: Download existing database (if exists)
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: market-intel-db
+          path: data/
+      
+      - name: Run data ingestion
+        env:
+          # Phase 1 & 2 API Keys (Required)
+          SOSOVALUE_API_KEY: ${{ secrets.SOSOVALUE_API_KEY }}
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+          
+          # Phase 3 API Keys (Optional)
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          REDDIT_USER_AGENT: ${{ secrets.REDDIT_USER_AGENT }}
+          NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
+          
+          # Configuration
+          RATE_LIMIT_DELAY: "1.5"
+          ENABLE_CSV_BACKUP: "true"
+          LOG_LEVEL: "INFO"
+          
+          # Phase 2 Feature Flags
+          ENABLE_MARKET_METRICS: "true"
+          ENABLE_DERIVATIVES_DATA: "true"
+          
+          # Phase 3 Feature Flags (set to true if API keys are configured)
+          ENABLE_SOCIAL_SENTIMENT: ${{ secrets.REDDIT_CLIENT_ID != '' && 'true' || 'false' }}
+          ENABLE_NEWS_SENTIMENT: ${{ secrets.NEWSAPI_KEY != '' && 'true' || 'false' }}
+          ENABLE_SEARCH_TRENDS: "true"
+        run: |
+          if [ "${{ github.event.inputs.mode }}" = "backfill" ]; then
+            python3 main.py --backfill
+          else
+            python3 main.py
+          fi
+      
+      - name: Upload database artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: market-intel-db
+          path: data/market_intel.db
+          retention-days: 30
+      
+      - name: Upload CSV backups
+        uses: actions/upload-artifact@v4
+        with:
+          name: csv-backups-${{ github.run_number }}
+          path: data/backups/
+          retention-days: 7
+      
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ingestion-logs-${{ github.run_number }}
+          path: logs/
+          retention-days: 7
+      
+      - name: Generate summary report
+        if: always()
+        run: |
+          echo "# Daily Ingestion Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Run Date:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "logs/ingestion_$(date +%Y%m%d).log" ]; then
+            echo "## Log Summary" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -n 50 logs/ingestion_$(date +%Y%m%d).log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ -f "data/market_intel.db" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "## Database Info" >> $GITHUB_STEP_SUMMARY
+            echo "Database size: $(du -h data/market_intel.db | cut -f1)" >> $GITHUB_STEP_SUMMARY
+          fi
+      
+      - name: Commit and push database (optional)
+        if: github.ref == 'refs/heads/main' && success()
+        env:
+          COMMIT_DB: ${{ secrets.COMMIT_DB_TO_REPO }}
+        run: |
+          if [ "$COMMIT_DB" = "true" ]; then
+            git config --local user.email "github-actions[bot]@users.noreply.github.com"
+            git config --local user.name "github-actions[bot]"
+            
+            git add data/market_intel.db data/backups/
+            
+            if git diff --staged --quiet; then
+              echo "No changes to commit"
+            else
+              git commit -m "chore: daily data ingestion - $(date -u +%Y-%m-%d)"
+              git push
+            fi
+          else
+            echo "Database commit disabled (set COMMIT_DB_TO_REPO secret to 'true' to enable)"
+          fi
+

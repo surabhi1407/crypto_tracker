@@ -51,6 +51,22 @@ class Config:
     ENABLE_MARKET_METRICS = os.getenv('ENABLE_MARKET_METRICS', 'true').lower() == 'true'
     ENABLE_DERIVATIVES_DATA = os.getenv('ENABLE_DERIVATIVES_DATA', 'true').lower() == 'true'
     
+    # Phase 3 API Configuration (NLP & Sentiment)
+    REDDIT_CLIENT_ID = os.getenv('REDDIT_CLIENT_ID', None)
+    REDDIT_CLIENT_SECRET = os.getenv('REDDIT_CLIENT_SECRET', None)
+    REDDIT_USER_AGENT = os.getenv('REDDIT_USER_AGENT', 'CryptoIntelDashboard/1.0')
+    
+    NEWSAPI_KEY = os.getenv('NEWSAPI_KEY', None)
+    
+    # Phase 3 Feature Flags
+    ENABLE_SOCIAL_SENTIMENT = os.getenv('ENABLE_SOCIAL_SENTIMENT', 'false').lower() == 'true'
+    ENABLE_NEWS_SENTIMENT = os.getenv('ENABLE_NEWS_SENTIMENT', 'false').lower() == 'true'
+    ENABLE_SEARCH_TRENDS = os.getenv('ENABLE_SEARCH_TRENDS', 'false').lower() == 'true'
+    
+    # Phase 3 Configuration
+    CRYPTO_SUBREDDITS = ['CryptoCurrency', 'Bitcoin', 'ethereum']
+    SEARCH_KEYWORDS = ['bitcoin', 'ethereum', 'cryptocurrency']
+    
     @classmethod
     def validate(cls) -> bool:
         """Validate configuration"""
@@ -77,6 +93,11 @@ class Config:
             'HAS_SOSOVALUE_API_KEY': cls.SOSOVALUE_API_KEY is not None,
             'ENABLE_MARKET_METRICS': cls.ENABLE_MARKET_METRICS,
             'ENABLE_DERIVATIVES_DATA': cls.ENABLE_DERIVATIVES_DATA,
-            'BINANCE_FUTURES_BASE_URL': cls.BINANCE_FUTURES_BASE_URL
+            'BINANCE_FUTURES_BASE_URL': cls.BINANCE_FUTURES_BASE_URL,
+            'HAS_REDDIT_CREDENTIALS': cls.REDDIT_CLIENT_ID is not None and cls.REDDIT_CLIENT_SECRET is not None,
+            'HAS_NEWSAPI_KEY': cls.NEWSAPI_KEY is not None,
+            'ENABLE_SOCIAL_SENTIMENT': cls.ENABLE_SOCIAL_SENTIMENT,
+            'ENABLE_NEWS_SENTIMENT': cls.ENABLE_NEWS_SENTIMENT,
+            'ENABLE_SEARCH_TRENDS': cls.ENABLE_SEARCH_TRENDS
         }
 

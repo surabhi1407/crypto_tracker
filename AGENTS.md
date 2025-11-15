@@ -65,26 +65,91 @@ For implementation details → see connectors and `ingestion_pipeline.py`.
 
 ---
 
-## 🧩 Work-In-Progress / Next Implementation
-
 ### **Phase 3 – NLP + Sentiment Pipeline**
-**Goal:** Capture and quantify market mood via social, news, and search data to build a daily sentiment index.
+**Status:** ✅ Operational (Released Nov 2025)  
+**Files:**  
+- Connectors → `src/connectors/{reddit_connector.py, news_connector.py, trends_connector.py}`  
+- Sentiment Analysis → `src/utils/sentiment_analyzer.py`  
+- Schema v4 migrations in `src/storage/schema.py`
 
-#### 🔗 Data Sources (Planned)
-| Layer | Purpose | Source | Access |
-|--------|----------|--------|--------|
-| **Social** | Retail mood (“what people feel”) | Reddit API (r/CryptoCurrency, r/Bitcoin), X API, LunarCrush | `praw`, `tweepy`, LunarCrush REST |
-| **News** | Narrative tone (“what media says”) | NewsAPI + FinBERT NLP classification | `newsapi-python`, `transformers (ProsusAI/finbert)` |
-| **Search Interest** | Attention cycles (“what people look for”) | Google Trends | `pytrends` (no auth) |
+**New Signals**
+| Layer | Purpose | Source | Technology |
+|--------|----------|--------|------------|
+| **Social** | Retail mood ("what people feel") | Reddit (r/CryptoCurrency, r/Bitcoin, r/ethereum) | PRAW + VADER sentiment |
+| **News** | Narrative tone ("what media says") | NewsAPI | FinBERT (ProsusAI/finbert) |
+| **Search Interest** | Attention cycles ("what people look for") | Google Trends | pytrends |
 
-#### 🧱 Proposed Tables
+**Architecture: Raw Data + Aggregation Pattern**
+Similar to Phase 1 (which stores raw OHLC data before computing daily snapshots), Phase 3 now:
+1. **Stores raw data** → Individual posts, articles, and trend points with sentiment scores
+2. **Computes aggregated metrics** → Daily sentiment summaries from raw data
+
+This enables:
+- **Historical reprocessing** with different sentiment analyzers
+- **Audit trail** of source data
+- **Flexible aggregation** strategies without re-fetching from APIs
+
+**Implemented Tables**
+
+*Raw Data Tables:*
+```sql
+CREATE TABLE social_posts_raw (
+    post_id TEXT NOT NULL,
+    platform TEXT NOT NULL,
+    subreddit TEXT,
+    title TEXT,
+    text TEXT,
+    author TEXT,
+    created_utc TIMESTAMP NOT NULL,
+    score INTEGER,
+    upvote_ratio REAL,
+    num_comments INTEGER,
+    url TEXT,
+    sentiment_compound REAL,
+    sentiment_pos REAL,
+    sentiment_neg REAL,
+    sentiment_neu REAL,
+    sentiment_label TEXT,
+    UNIQUE(post_id, platform)
+);
+
+CREATE TABLE news_articles_raw (
+    article_url TEXT NOT NULL UNIQUE,
+    title TEXT,
+    description TEXT,
+    source TEXT,
+    author TEXT,
+    published_at TIMESTAMP NOT NULL,
+    sentiment_compound REAL,
+    sentiment_label TEXT,
+    sentiment_confidence REAL,
+    positive_prob REAL,
+    negative_prob REAL,
+    neutral_prob REAL
+);
+
+CREATE TABLE search_trends_raw (
+    ts_utc TIMESTAMP NOT NULL,
+    keyword TEXT NOT NULL,
+    interest_score REAL NOT NULL,
+    geo TEXT DEFAULT '',
+    timeframe TEXT,
+    UNIQUE(ts_utc, keyword, geo)
+);
+```
+
+*Aggregated Tables:*
 ```sql
 CREATE TABLE social_sentiment_daily (
     as_of_date DATE,
     platform TEXT,
     mentions_count INTEGER,
     sentiment_score REAL,
+    positive_mentions INTEGER,
+    negative_mentions INTEGER,
+    neutral_mentions INTEGER,
     engagement_score REAL,
+    top_keywords TEXT,
     UNIQUE(as_of_date, platform)
 );
 
@@ -94,6 +159,9 @@ CREATE TABLE news_sentiment_daily (
     avg_sentiment REAL,
     positive_pct REAL,
     negative_pct REAL,
+    neutral_pct REAL,
+    top_sources TEXT,
+    top_keywords TEXT,
     UNIQUE(as_of_date)
 );
 
@@ -101,9 +169,36 @@ CREATE TABLE search_interest_daily (
     as_of_date DATE,
     keyword TEXT,
     interest_score REAL,
+    interest_change_pct REAL,
+    related_queries TEXT,
     UNIQUE(as_of_date, keyword)
 );
+```
 
+**Highlights**
+- **Raw data storage** for all Phase 3 sources (posts, articles, trends)
+- **VADER Sentiment** for social media (optimized for informal text)  
+- **FinBERT NLP** for financial news (fine-tuned on financial language)  
+- **Multi-platform aggregation** with engagement scoring  
+- **Keyword extraction** and related query tracking  
+- **Graceful degradation** - each connector can fail independently  
+- **Idempotent writes** - raw data can be re-ingested safely
+- **All tests passing** - 10/10 raw data tests, 9/9 schema tests, full unit test coverage
+
+**Configuration**
+Phase 3 features are opt-in via environment variables:
+- `ENABLE_SOCIAL_SENTIMENT=true` + Reddit API credentials
+- `ENABLE_NEWS_SENTIMENT=true` + NewsAPI key
+- `ENABLE_SEARCH_TRENDS=true` (no auth required)
+
+For implementation details → see connectors and `ingestion_pipeline.py`.
+
+---
+
+## 🧩 Work-In-Progress / Next Implementation
+
+### **Phase 4 – Dashboarding & Visualization**
+**Goal:** Build interactive dashboards to visualize market intelligence and sentiment trends.
 
 ---
 

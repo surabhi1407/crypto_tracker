@@ -6,6 +6,9 @@ from src.connectors.fear_greed import FearGreedConnector
 from src.connectors.etf_flows import ETFFlowsConnector
 from src.connectors.market_metrics import MarketMetricsConnector
 from src.connectors.binance_futures import BinanceFuturesConnector
+from src.connectors.reddit_connector import RedditConnector
+from src.connectors.news_connector import NewsConnector
+from src.connectors.trends_connector import TrendsConnector
 from src.storage.database import MarketDatabase
 from src.utils.csv_backup import CSVBackup
 from src.utils.config import Config
@@ -54,6 +57,42 @@ class IngestionPipeline:
                 rate_limit_delay=0.5
             )
             logger.info("Binance futures connector enabled")
+        
+        # Initialize Phase 3 connectors
+        self.reddit = None
+        self.news = None
+        self.trends = None
+        
+        if Config.ENABLE_SOCIAL_SENTIMENT and Config.REDDIT_CLIENT_ID:
+            try:
+                self.reddit = RedditConnector(
+                    client_id=Config.REDDIT_CLIENT_ID,
+                    client_secret=Config.REDDIT_CLIENT_SECRET,
+                    user_agent=Config.REDDIT_USER_AGENT,
+                    rate_limit_delay=2.0
+                )
+                logger.info("Reddit connector enabled")
+            except Exception as e:
+                logger.warning(f"Reddit connector initialization failed: {e}")
+        
+        if Config.ENABLE_NEWS_SENTIMENT and Config.NEWSAPI_KEY:
+            try:
+                self.news = NewsConnector(
+                    api_key=Config.NEWSAPI_KEY,
+                    rate_limit_delay=1.0
+                )
+                logger.info("News connector enabled")
+            except Exception as e:
+                logger.warning(f"News connector initialization failed: {e}")
+        
+        if Config.ENABLE_SEARCH_TRENDS:
+            try:
+                self.trends = TrendsConnector(
+                    rate_limit_delay=2.0
+                )
+                logger.info("Google Trends connector enabled")
+            except Exception as e:
+                logger.warning(f"Trends connector initialization failed: {e}")
         
         # Initialize database
         self.db = MarketDatabase(Config.DB_PATH)
@@ -289,6 +328,165 @@ class IngestionPipeline:
         
         return stats
     
+    def ingest_social_sentiment(self, days: int = 1) -> Dict[str, Any]:
+        """
+        Ingest social sentiment from Reddit (raw posts + aggregated sentiment)
+        
+        Args:
+            days: Number of days to fetch (default: 1)
+        
+        Returns:
+            Dictionary with ingestion statistics
+        """
+        if not self.reddit:
+            logger.info("Reddit connector disabled, skipping social sentiment")
+            return {'success': True, 'raw_records': 0, 'aggregated_records': 0, 'errors': [], 'skipped': True}
+        
+        logger.info(f"Starting social sentiment ingestion (last {days} days)")
+        stats = {'success': False, 'raw_records': 0, 'aggregated_records': 0, 'errors': []}
+        
+        try:
+            # Step 1: Fetch and store raw posts
+            logger.info("Fetching raw social posts...")
+            raw_posts = self.reddit.fetch_raw_posts(days_back=days)
+            
+            if raw_posts:
+                # Insert raw posts into database
+                raw_count = self.db.insert_social_posts_raw(raw_posts)
+                stats['raw_records'] = raw_count
+                logger.info(f"Stored {raw_count} raw social posts")
+                
+                # Step 2: Compute aggregated sentiment from raw data
+                logger.info("Computing aggregated sentiment from raw posts...")
+                from datetime import timedelta
+                today = datetime.now()
+                
+                for i in range(days):
+                    date = (today - timedelta(days=i)).strftime('%Y-%m-%d')
+                    try:
+                        self.db.compute_social_sentiment_from_raw(date)
+                        stats['aggregated_records'] += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to compute sentiment for {date}: {e}")
+                        stats['errors'].append(f"Aggregation {date}: {str(e)}")
+                
+                stats['success'] = True
+                logger.info(f"Social sentiment ingestion complete: {raw_count} raw posts, {stats['aggregated_records']} daily aggregates")
+            else:
+                logger.warning("No social sentiment data to ingest")
+            
+        except Exception as e:
+            logger.error(f"Social sentiment ingestion failed: {e}")
+            stats['errors'].append(str(e))
+        
+        return stats
+    
+    def ingest_news_sentiment(self, days: int = 1) -> Dict[str, Any]:
+        """
+        Ingest news sentiment from NewsAPI (raw articles + aggregated sentiment)
+        
+        Args:
+            days: Number of days to fetch (default: 1)
+        
+        Returns:
+            Dictionary with ingestion statistics
+        """
+        if not self.news:
+            logger.info("News connector disabled, skipping news sentiment")
+            return {'success': True, 'raw_records': 0, 'aggregated_records': 0, 'errors': [], 'skipped': True}
+        
+        logger.info(f"Starting news sentiment ingestion (last {days} days)")
+        stats = {'success': False, 'raw_records': 0, 'aggregated_records': 0, 'errors': []}
+        
+        try:
+            # Step 1: Fetch and store raw articles
+            logger.info("Fetching raw news articles...")
+            raw_articles = self.news.fetch_raw_articles(days_back=days)
+            
+            if raw_articles:
+                # Insert raw articles into database
+                raw_count = self.db.insert_news_articles_raw(raw_articles)
+                stats['raw_records'] = raw_count
+                logger.info(f"Stored {raw_count} raw news articles")
+                
+                # Step 2: Compute aggregated sentiment from raw data
+                logger.info("Computing aggregated sentiment from raw articles...")
+                from datetime import timedelta
+                today = datetime.now()
+                
+                for i in range(days):
+                    date = (today - timedelta(days=i)).strftime('%Y-%m-%d')
+                    try:
+                        self.db.compute_news_sentiment_from_raw(date)
+                        stats['aggregated_records'] += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to compute sentiment for {date}: {e}")
+                        stats['errors'].append(f"Aggregation {date}: {str(e)}")
+                
+                stats['success'] = True
+                logger.info(f"News sentiment ingestion complete: {raw_count} raw articles, {stats['aggregated_records']} daily aggregates")
+            else:
+                logger.warning("No news sentiment data to ingest")
+            
+        except Exception as e:
+            logger.error(f"News sentiment ingestion failed: {e}")
+            stats['errors'].append(str(e))
+        
+        return stats
+    
+    def ingest_search_trends(self, days: int = 7) -> Dict[str, Any]:
+        """
+        Ingest search interest from Google Trends (raw trends + aggregated interest)
+        
+        Args:
+            days: Number of days to fetch (default: 7)
+        
+        Returns:
+            Dictionary with ingestion statistics
+        """
+        if not self.trends:
+            logger.info("Trends connector disabled, skipping search trends")
+            return {'success': True, 'raw_records': 0, 'aggregated_records': 0, 'errors': [], 'skipped': True}
+        
+        logger.info(f"Starting search trends ingestion (last {days} days)")
+        stats = {'success': False, 'raw_records': 0, 'aggregated_records': 0, 'errors': []}
+        
+        try:
+            # Step 1: Fetch and store raw trends
+            logger.info("Fetching raw search trends...")
+            raw_trends = self.trends.fetch_raw_trends(days_back=days)
+            
+            if raw_trends:
+                # Insert raw trends into database
+                raw_count = self.db.insert_search_trends_raw(raw_trends)
+                stats['raw_records'] = raw_count
+                logger.info(f"Stored {raw_count} raw search trend records")
+                
+                # Step 2: Compute aggregated interest from raw data
+                logger.info("Computing aggregated search interest from raw trends...")
+                from datetime import timedelta
+                today = datetime.now()
+                
+                for i in range(days):
+                    date = (today - timedelta(days=i)).strftime('%Y-%m-%d')
+                    try:
+                        self.db.compute_search_interest_from_raw(date)
+                        stats['aggregated_records'] += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to compute interest for {date}: {e}")
+                        stats['errors'].append(f"Aggregation {date}: {str(e)}")
+                
+                stats['success'] = True
+                logger.info(f"Search trends ingestion complete: {raw_count} raw trends, {stats['aggregated_records']} daily aggregates")
+            else:
+                logger.warning("No search trends data to ingest")
+            
+        except Exception as e:
+            logger.error(f"Search trends ingestion failed: {e}")
+            stats['errors'].append(str(e))
+        
+        return stats
+    
     def compute_snapshots(self, days: int = 7) -> Dict[str, Any]:
         """
         Compute daily market snapshots
@@ -325,20 +523,21 @@ class IngestionPipeline:
         
         return stats
     
-    def run_full_ingestion(self, etf_days: int = 7, sentiment_days: int = 7) -> Dict[str, Any]:
+    def run_full_ingestion(self, etf_days: int = 7, sentiment_days: int = 7, nlp_days: int = 1) -> Dict[str, Any]:
         """
-        Run complete ingestion pipeline (Phase 1 + Phase 2)
+        Run complete ingestion pipeline (Phase 1 + Phase 2 + Phase 3)
         
         Args:
             etf_days: Number of days of ETF data to fetch (default: 7 for daily sync, 300 for backfill)
             sentiment_days: Number of days of sentiment data to fetch (default: 7 for daily sync, 30 for backfill)
+            nlp_days: Number of days of NLP/sentiment data to fetch (default: 1 for daily sync, 7 for backfill)
         
         Returns:
             Dictionary with overall statistics
         """
         logger.info("=" * 60)
-        logger.info("STARTING FULL INGESTION PIPELINE (PHASE 1 + PHASE 2)")
-        logger.info(f"Mode: ETF={etf_days} days, Sentiment={sentiment_days} days")
+        logger.info("STARTING FULL INGESTION PIPELINE (PHASE 1 + PHASE 2 + PHASE 3)")
+        logger.info(f"Mode: ETF={etf_days} days, Sentiment={sentiment_days} days, NLP={nlp_days} days")
         logger.info("=" * 60)
         
         start_time = datetime.now()
@@ -353,6 +552,9 @@ class IngestionPipeline:
             'market_metrics': {},
             'funding_rates': {},
             'open_interest': {},
+            'social_sentiment': {},
+            'news_sentiment': {},
+            'search_trends': {},
             'snapshots': {},
             'overall_success': False
         }
@@ -384,11 +586,26 @@ class IngestionPipeline:
         results['funding_rates'] = self.ingest_funding_rates()
         
         # Step 6: Ingest open interest
-        logger.info("\n[6/7] Ingesting open interest...")
+        logger.info("\n[6/10] Ingesting open interest...")
         results['open_interest'] = self.ingest_open_interest()
         
-        # Step 7: Compute daily snapshots
-        logger.info("\n[7/7] Computing daily snapshots...")
+        # Phase 3 Ingestion
+        logger.info("\n=== PHASE 3: NLP & Sentiment Analysis ===")
+        
+        # Step 7: Ingest social sentiment
+        logger.info(f"\n[7/10] Ingesting social sentiment (last {nlp_days} days)...")
+        results['social_sentiment'] = self.ingest_social_sentiment(days=nlp_days)
+        
+        # Step 8: Ingest news sentiment
+        logger.info(f"\n[8/10] Ingesting news sentiment (last {nlp_days} days)...")
+        results['news_sentiment'] = self.ingest_news_sentiment(days=nlp_days)
+        
+        # Step 9: Ingest search trends
+        logger.info(f"\n[9/10] Ingesting search trends (last 7 days)...")
+        results['search_trends'] = self.ingest_search_trends(days=7)
+        
+        # Step 10: Compute daily snapshots
+        logger.info("\n[10/10] Computing daily snapshots...")
         results['snapshots'] = self.compute_snapshots(days=7)
         
         # Overall success if at least Phase 1 core data succeeded

@@ -2,7 +2,7 @@
 
 Data-driven crypto market analysis combining real-time data with AI reasoning for actionable trading insights.
 
-**Phase 1 Status:** ✅ **COMPLETE & OPERATIONAL** - Production-ready data ingestion system.
+**Status:** ✅ **Phase 1, 2 & 3 OPERATIONAL** - Production-ready multi-source data ingestion with NLP sentiment analysis.
 
 ## 🚀 Quick Start
 
@@ -21,19 +21,47 @@ python3 main.py
 
 ## 📊 Data Sources
 
+### Phase 1 & 2: Market Data
 | Source | Data | Status |
 |--------|------|--------|
-| **CoinGecko** | BTC/ETH prices (14 days) | ✅ Active |
-| **Alternative.me** | Fear & Greed Index (30 days) | ✅ Active |
+| **CoinGecko** | BTC/ETH prices, volume, market cap | ✅ Active |
+| **Alternative.me** | Fear & Greed Index | ✅ Active |
 | **SoSoValue** | ETF flows (300 days) | ✅ Active |
+| **Binance Futures** | Funding rates, open interest | ✅ Active |
+
+### Phase 3: NLP & Sentiment
+| Source | Data | Status |
+|--------|------|--------|
+| **Reddit** | Social sentiment (VADER) | 🔧 Optional |
+| **NewsAPI** | News sentiment (FinBERT) | 🔧 Optional |
+| **Google Trends** | Search interest | 🔧 Optional |
 
 ## 💾 Database
 
-SQLite database with 4 tables:
+SQLite database with 16 tables (raw + aggregated):
+
+**Phase 1:**
 - `ohlc_hourly` - Price data with trading sessions
 - `sentiment_daily` - Fear & Greed sentiment
 - `etf_flows_daily` - Institutional flows
 - `daily_market_snapshot` - Consolidated metrics
+
+**Phase 2:**
+- `market_metrics_daily` - Volume, dominance, market cap
+- `funding_rates_snapshots` - Derivatives funding rates
+- `open_interest_daily` - Futures open interest
+
+**Phase 3 (Raw Data):**
+- `social_posts_raw` - Individual Reddit posts with sentiment
+- `news_articles_raw` - Individual news articles with sentiment
+- `search_trends_raw` - Raw Google Trends data points
+
+**Phase 3 (Aggregated):**
+- `social_sentiment_daily` - Reddit sentiment & engagement
+- `news_sentiment_daily` - News article sentiment (FinBERT)
+- `search_interest_daily` - Google Trends search data
+
+**Architecture:** Phase 3 follows Phase 1's pattern of storing raw data before aggregation, enabling historical reprocessing with different sentiment analyzers without re-fetching from APIs.
 
 ## 🎯 Commands
 
@@ -83,24 +111,64 @@ crypto_tracker/
 
 ## ⚙️ Configuration
 
-Optional settings in `.env`:
+Settings in `.env`:
 
 ```bash
+# Phase 1 & 2 (Required)
 SOSOVALUE_API_KEY=required
 COINGECKO_API_KEY=optional
 RATE_LIMIT_DELAY=1.5
 ENABLE_CSV_BACKUP=true
 LOG_LEVEL=INFO
+
+# Phase 2 Feature Flags
+ENABLE_MARKET_METRICS=true
+ENABLE_DERIVATIVES_DATA=true
+
+# Phase 3 API Keys (Optional)
+REDDIT_CLIENT_ID=your_reddit_client_id
+REDDIT_CLIENT_SECRET=your_reddit_secret
+REDDIT_USER_AGENT=CryptoIntelDashboard/1.0
+NEWSAPI_KEY=your_newsapi_key
+
+# Phase 3 Feature Flags (Opt-in)
+ENABLE_SOCIAL_SENTIMENT=false
+ENABLE_NEWS_SENTIMENT=false
+ENABLE_SEARCH_TRENDS=false
 ```
+
+### Getting API Keys
+
+**Reddit API** (for social sentiment):
+1. Go to https://www.reddit.com/prefs/apps
+2. Create an app (script type)
+3. Copy client ID and secret
+
+**NewsAPI** (for news sentiment):
+1. Go to https://newsapi.org/
+2. Sign up for free tier (100 requests/day)
+3. Copy API key
+
+**Google Trends** - No API key required!
 
 ## 🔧 Features
 
-- ✅ Automated data ingestion from 3 sources
+**Phase 1 & 2:**
+- ✅ Automated data ingestion from 5 sources
 - ✅ SQLite database with idempotent writes
 - ✅ Retry logic and rate limiting
 - ✅ CSV backups and comprehensive logging
 - ✅ Trading session classification
-- ✅ No mock data - production ready
+- ✅ Derivatives data (funding rates, open interest)
+
+**Phase 3 (NLP & Sentiment):**
+- ✅ Reddit social sentiment analysis (VADER)
+- ✅ Financial news sentiment (FinBERT)
+- ✅ Google Trends search interest tracking
+- ✅ Multi-platform sentiment aggregation
+- ✅ Keyword extraction and engagement scoring
+- ✅ Graceful degradation (optional connectors)
+- ✅ Comprehensive unit test coverage
 
 ## 📝 Logs
 
@@ -108,6 +176,36 @@ Check `logs/ingestion_YYYYMMDD.log` for detailed execution information.
 
 ---
 
-**Phase 1 Complete** ✅ | **Next: Dashboard Enhancement & AI Integration** 🚀
+## 🧪 Testing
+
+Run unit tests:
+```bash
+# Test Phase 3 schema
+PYTHONPATH=. python3 tests/test_phase3_schema.py
+
+# Test sentiment analyzer
+PYTHONPATH=. python3 tests/test_sentiment_analyzer.py
+```
+
+---
+
+## 📦 Installation
+
+Install Phase 3 dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+Note: Phase 3 dependencies include:
+- `praw` - Reddit API
+- `newsapi-python` - NewsAPI client
+- `pytrends` - Google Trends
+- `transformers` - FinBERT model
+- `torch` - PyTorch for FinBERT
+- `vaderSentiment` - VADER sentiment analyzer
+
+---
+
+**Phase 1, 2 & 3 Complete** ✅ | **Next: Phase 4 - Dashboarding & Visualization** 🚀
 
 For detailed documentation, see `AGENTS.md`

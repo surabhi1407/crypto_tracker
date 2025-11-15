@@ -10,3 +10,11 @@ altair>=5.1.0
 # Utilities
 pytz>=2023.3
 
+# Phase 3: NLP & Sentiment Analysis
+praw>=7.7.1
+newsapi-python>=0.2.7
+pytrends>=4.9.2
+transformers>=4.35.0
+torch>=2.1.0
+vaderSentiment>=3.3.2
+

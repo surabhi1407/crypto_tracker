@@ -464,11 +464,509 @@ class MarketDatabase:
             logger.error(f"Failed to insert open interest: {e}")
             raise
     
+    def insert_social_posts_raw(self, records: List[Dict[str, Any]]) -> int:
+        """
+        Insert raw social media posts (idempotent)
+        
+        Args:
+            records: List of social post records with keys:
+                     post_id, platform, subreddit, title, text, author,
+                     created_utc, score, upvote_ratio, num_comments, url,
+                     sentiment_compound, sentiment_pos, sentiment_neg, 
+                     sentiment_neu, sentiment_label
+        
+        Returns:
+            Number of records inserted/updated
+        """
+        if not records:
+            logger.warning("No social post records to insert")
+            return 0
+        
+        sql = """
+            INSERT OR REPLACE INTO social_posts_raw 
+            (post_id, platform, subreddit, title, text, author,
+             created_utc, score, upvote_ratio, num_comments, url,
+             sentiment_compound, sentiment_pos, sentiment_neg, 
+             sentiment_neu, sentiment_label)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                data = [
+                    (
+                        r['id'],
+                        r['platform'],
+                        r.get('subreddit'),
+                        r.get('title'),
+                        r.get('text'),
+                        r.get('author'),
+                        r['created_utc'],
+                        r.get('score'),
+                        r.get('upvote_ratio'),
+                        r.get('num_comments'),
+                        r.get('url'),
+                        r.get('sentiment_compound'),
+                        r.get('sentiment_pos'),
+                        r.get('sentiment_neg'),
+                        r.get('sentiment_neu'),
+                        r.get('sentiment_label')
+                    )
+                    for r in records
+                ]
+                
+                cursor.executemany(sql, data)
+                conn.commit()
+                
+                count = cursor.rowcount
+                logger.info(f"Inserted/updated {count} raw social post records")
+                return count
+                
+        except sqlite3.Error as e:
+            logger.error(f"Failed to insert raw social posts: {e}")
+            raise
+    
+    def insert_social_sentiment(self, records: List[Dict[str, Any]]) -> int:
+        """
+        Insert social sentiment data (idempotent)
+        
+        Args:
+            records: List of social sentiment records with keys:
+                     as_of_date, platform, mentions_count, sentiment_score,
+                     positive_mentions, negative_mentions, neutral_mentions,
+                     engagement_score, top_keywords, source
+        
+        Returns:
+            Number of records inserted/updated
+        """
+        if not records:
+            logger.warning("No social sentiment records to insert")
+            return 0
+        
+        sql = """
+            INSERT OR REPLACE INTO social_sentiment_daily 
+            (as_of_date, platform, mentions_count, sentiment_score,
+             positive_mentions, negative_mentions, neutral_mentions,
+             engagement_score, top_keywords, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                data = [
+                    (
+                        r['as_of_date'],
+                        r['platform'],
+                        r.get('mentions_count', 0),
+                        r.get('sentiment_score'),
+                        r.get('positive_mentions', 0),
+                        r.get('negative_mentions', 0),
+                        r.get('neutral_mentions', 0),
+                        r.get('engagement_score'),
+                        r.get('top_keywords'),
+                        r.get('source', 'REDDIT')
+                    )
+                    for r in records
+                ]
+                
+                cursor.executemany(sql, data)
+                conn.commit()
+                
+                count = cursor.rowcount
+                logger.info(f"Inserted/updated {count} social sentiment records")
+                return count
+                
+        except sqlite3.Error as e:
+            logger.error(f"Failed to insert social sentiment: {e}")
+            raise
+    
+    def insert_news_articles_raw(self, records: List[Dict[str, Any]]) -> int:
+        """
+        Insert raw news articles (idempotent)
+        
+        Args:
+            records: List of news article records with keys:
+                     url, title, description, source, author, published_at,
+                     sentiment_compound, sentiment_label, sentiment_confidence,
+                     positive_prob, negative_prob, neutral_prob
+        
+        Returns:
+            Number of records inserted/updated
+        """
+        if not records:
+            logger.warning("No news article records to insert")
+            return 0
+        
+        sql = """
+            INSERT OR REPLACE INTO news_articles_raw 
+            (article_url, title, description, source, author, published_at,
+             sentiment_compound, sentiment_label, sentiment_confidence,
+             positive_prob, negative_prob, neutral_prob)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                data = [
+                    (
+                        r['url'],
+                        r.get('title'),
+                        r.get('description'),
+                        r.get('source'),
+                        r.get('author'),
+                        r['published_at'],
+                        r.get('sentiment_compound'),
+                        r.get('sentiment_label'),
+                        r.get('sentiment_confidence'),
+                        r.get('positive_prob'),
+                        r.get('negative_prob'),
+                        r.get('neutral_prob')
+                    )
+                    for r in records
+                ]
+                
+                cursor.executemany(sql, data)
+                conn.commit()
+                
+                count = cursor.rowcount
+                logger.info(f"Inserted/updated {count} raw news article records")
+                return count
+                
+        except sqlite3.Error as e:
+            logger.error(f"Failed to insert raw news articles: {e}")
+            raise
+    
+    def insert_news_sentiment(self, records: List[Dict[str, Any]]) -> int:
+        """
+        Insert news sentiment data (idempotent)
+        
+        Args:
+            records: List of news sentiment records with keys:
+                     as_of_date, article_count, avg_sentiment,
+                     positive_pct, negative_pct, neutral_pct,
+                     top_sources, top_keywords, source
+        
+        Returns:
+            Number of records inserted/updated
+        """
+        if not records:
+            logger.warning("No news sentiment records to insert")
+            return 0
+        
+        sql = """
+            INSERT OR REPLACE INTO news_sentiment_daily 
+            (as_of_date, article_count, avg_sentiment, positive_pct,
+             negative_pct, neutral_pct, top_sources, top_keywords, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                data = [
+                    (
+                        r['as_of_date'],
+                        r.get('article_count', 0),
+                        r.get('avg_sentiment'),
+                        r.get('positive_pct'),
+                        r.get('negative_pct'),
+                        r.get('neutral_pct'),
+                        r.get('top_sources'),
+                        r.get('top_keywords'),
+                        r.get('source', 'NEWSAPI')
+                    )
+                    for r in records
+                ]
+                
+                cursor.executemany(sql, data)
+                conn.commit()
+                
+                count = cursor.rowcount
+                logger.info(f"Inserted/updated {count} news sentiment records")
+                return count
+                
+        except sqlite3.Error as e:
+            logger.error(f"Failed to insert news sentiment: {e}")
+            raise
+    
+    def insert_search_trends_raw(self, records: List[Dict[str, Any]]) -> int:
+        """
+        Insert raw search trends data (idempotent)
+        
+        Args:
+            records: List of search trend records with keys:
+                     ts_utc, keyword, interest_score, geo, timeframe
+        
+        Returns:
+            Number of records inserted/updated
+        """
+        if not records:
+            logger.warning("No search trend records to insert")
+            return 0
+        
+        sql = """
+            INSERT OR REPLACE INTO search_trends_raw 
+            (ts_utc, keyword, interest_score, geo, timeframe)
+            VALUES (?, ?, ?, ?, ?)
+        """
+        
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                data = [
+                    (
+                        r['ts_utc'],
+                        r['keyword'],
+                        r['interest_score'],
+                        r.get('geo', ''),
+                        r.get('timeframe')
+                    )
+                    for r in records
+                ]
+                
+                cursor.executemany(sql, data)
+                conn.commit()
+                
+                count = cursor.rowcount
+                logger.info(f"Inserted/updated {count} raw search trend records")
+                return count
+                
+        except sqlite3.Error as e:
+            logger.error(f"Failed to insert raw search trends: {e}")
+            raise
+    
+    def insert_search_interest(self, records: List[Dict[str, Any]]) -> int:
+        """
+        Insert search interest data (idempotent)
+        
+        Args:
+            records: List of search interest records with keys:
+                     as_of_date, keyword, interest_score,
+                     interest_change_pct, related_queries, source
+        
+        Returns:
+            Number of records inserted/updated
+        """
+        if not records:
+            logger.warning("No search interest records to insert")
+            return 0
+        
+        sql = """
+            INSERT OR REPLACE INTO search_interest_daily 
+            (as_of_date, keyword, interest_score, interest_change_pct,
+             related_queries, source)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """
+        
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                data = [
+                    (
+                        r['as_of_date'],
+                        r['keyword'],
+                        r['interest_score'],
+                        r.get('interest_change_pct'),
+                        r.get('related_queries'),
+                        r.get('source', 'GOOGLE_TRENDS')
+                    )
+                    for r in records
+                ]
+                
+                cursor.executemany(sql, data)
+                conn.commit()
+                
+                count = cursor.rowcount
+                logger.info(f"Inserted/updated {count} search interest records")
+                return count
+                
+        except sqlite3.Error as e:
+            logger.error(f"Failed to insert search interest: {e}")
+            raise
+    
+    def compute_social_sentiment_from_raw(self, as_of_date: str) -> None:
+        """
+        Compute and store daily social sentiment from raw posts
+        
+        Args:
+            as_of_date: Date in YYYY-MM-DD format
+        """
+        logger.info(f"Computing social sentiment from raw data for {as_of_date}")
+        
+        sql = """
+            INSERT OR REPLACE INTO social_sentiment_daily
+            (as_of_date, platform, mentions_count, sentiment_score,
+             positive_mentions, negative_mentions, neutral_mentions,
+             engagement_score, top_keywords, source)
+            
+            WITH post_stats AS (
+                SELECT 
+                    DATE(created_utc) as post_date,
+                    platform,
+                    COUNT(*) as mentions_count,
+                    AVG(sentiment_compound) as sentiment_score,
+                    SUM(CASE WHEN sentiment_label = 'POSITIVE' THEN 1 ELSE 0 END) as positive_mentions,
+                    SUM(CASE WHEN sentiment_label = 'NEGATIVE' THEN 1 ELSE 0 END) as negative_mentions,
+                    SUM(CASE WHEN sentiment_label = 'NEUTRAL' THEN 1 ELSE 0 END) as neutral_mentions,
+                    AVG(score * 1.0 + num_comments * 2.0) as engagement_score
+                FROM social_posts_raw
+                WHERE DATE(created_utc) = ?
+                GROUP BY DATE(created_utc), platform
+            )
+            
+            SELECT 
+                ? as as_of_date,
+                platform,
+                mentions_count,
+                sentiment_score,
+                positive_mentions,
+                negative_mentions,
+                neutral_mentions,
+                engagement_score,
+                '' as top_keywords,
+                'REDDIT' as source
+            FROM post_stats
+        """
+        
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(sql, (as_of_date, as_of_date))
+                conn.commit()
+                logger.info(f"Social sentiment computed from raw data for {as_of_date}")
+                
+        except sqlite3.Error as e:
+            logger.error(f"Failed to compute social sentiment from raw: {e}")
+            raise
+    
+    def compute_news_sentiment_from_raw(self, as_of_date: str) -> None:
+        """
+        Compute and store daily news sentiment from raw articles
+        
+        Args:
+            as_of_date: Date in YYYY-MM-DD format
+        """
+        logger.info(f"Computing news sentiment from raw data for {as_of_date}")
+        
+        sql = """
+            INSERT OR REPLACE INTO news_sentiment_daily
+            (as_of_date, article_count, avg_sentiment, positive_pct,
+             negative_pct, neutral_pct, top_sources, top_keywords, source)
+            
+            WITH article_stats AS (
+                SELECT 
+                    DATE(published_at) as pub_date,
+                    COUNT(*) as article_count,
+                    AVG(sentiment_compound) as avg_sentiment,
+                    (SUM(CASE WHEN sentiment_label = 'positive' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)) as positive_pct,
+                    (SUM(CASE WHEN sentiment_label = 'negative' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)) as negative_pct,
+                    (SUM(CASE WHEN sentiment_label = 'neutral' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)) as neutral_pct
+                FROM news_articles_raw
+                WHERE DATE(published_at) = ?
+                GROUP BY DATE(published_at)
+            )
+            
+            SELECT 
+                ? as as_of_date,
+                article_count,
+                avg_sentiment,
+                positive_pct,
+                negative_pct,
+                neutral_pct,
+                '' as top_sources,
+                '' as top_keywords,
+                'NEWSAPI' as source
+            FROM article_stats
+        """
+        
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(sql, (as_of_date, as_of_date))
+                conn.commit()
+                logger.info(f"News sentiment computed from raw data for {as_of_date}")
+                
+        except sqlite3.Error as e:
+            logger.error(f"Failed to compute news sentiment from raw: {e}")
+            raise
+    
+    def compute_search_interest_from_raw(self, as_of_date: str) -> None:
+        """
+        Compute and store daily search interest from raw trends
+        
+        Args:
+            as_of_date: Date in YYYY-MM-DD format
+        """
+        logger.info(f"Computing search interest from raw data for {as_of_date}")
+        
+        sql = """
+            INSERT OR REPLACE INTO search_interest_daily
+            (as_of_date, keyword, interest_score, interest_change_pct,
+             related_queries, source)
+            
+            WITH daily_interest AS (
+                SELECT 
+                    DATE(ts_utc) as trend_date,
+                    keyword,
+                    AVG(interest_score) as interest_score
+                FROM search_trends_raw
+                WHERE DATE(ts_utc) = ?
+                GROUP BY DATE(ts_utc), keyword
+            ),
+            
+            prev_interest AS (
+                SELECT 
+                    DATE(ts_utc) as trend_date,
+                    keyword,
+                    AVG(interest_score) as prev_score
+                FROM search_trends_raw
+                WHERE DATE(ts_utc) = DATE(?, '-1 day')
+                GROUP BY DATE(ts_utc), keyword
+            )
+            
+            SELECT 
+                ? as as_of_date,
+                di.keyword,
+                di.interest_score,
+                CASE 
+                    WHEN pi.prev_score IS NOT NULL AND pi.prev_score > 0
+                    THEN ((di.interest_score - pi.prev_score) / pi.prev_score * 100)
+                    ELSE NULL
+                END as interest_change_pct,
+                '' as related_queries,
+                'GOOGLE_TRENDS' as source
+            FROM daily_interest di
+            LEFT JOIN prev_interest pi ON di.keyword = pi.keyword
+        """
+        
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(sql, (as_of_date, as_of_date, as_of_date))
+                conn.commit()
+                logger.info(f"Search interest computed from raw data for {as_of_date}")
+                
+        except sqlite3.Error as e:
+            logger.error(f"Failed to compute search interest from raw: {e}")
+            raise
+    
     def get_record_counts(self) -> Dict[str, int]:
         """Get record counts for all tables"""
         tables = ['ohlc_hourly', 'sentiment_daily', 'etf_flows_daily', 
                   'daily_market_snapshot', 'market_metrics_daily',
-                  'funding_rates_snapshots', 'open_interest_daily']
+                  'funding_rates_snapshots', 'open_interest_daily',
+                  'social_posts_raw', 'social_sentiment_daily',
+                  'news_articles_raw', 'news_sentiment_daily',
+                  'search_trends_raw', 'search_interest_daily']
         counts = {}
         
         try:

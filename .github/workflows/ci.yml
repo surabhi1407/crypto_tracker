@@ -1,0 +1,58 @@
+name: CI - Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12', '3.13']
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+      
+      - name: Run Phase 3 schema tests
+        run: |
+          PYTHONPATH=. python3 tests/test_phase3_schema.py
+      
+      - name: Run sentiment analyzer tests
+        run: |
+          PYTHONPATH=. python3 tests/test_sentiment_analyzer.py
+      
+      - name: Run raw data storage tests
+        run: |
+          PYTHONPATH=. python3 tests/test_raw_data_storage.py
+      
+      - name: Run pipeline validation test
+        run: |
+          python3 test_pipeline.py
+      
+      - name: Lint check (optional)
+        continue-on-error: true
+        run: |
+          pip install flake8
+          flake8 src/ tests/ --max-line-length=120 --ignore=E501,W503
+      
+      - name: Test summary
+        if: always()
+        run: |
+          echo "# Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "Python Version: ${{ matrix.python-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "Status: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+

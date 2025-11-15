@@ -11,7 +11,7 @@ class DatabaseSchema:
     """Manages database schema creation and migrations"""
     
     # Schema version for future migrations
-    SCHEMA_VERSION = 2  # Updated for Phase 2
+    SCHEMA_VERSION = 4  # Updated for Phase 3 - Raw data storage
     
     # Table creation SQL statements
     TABLES = {
@@ -117,6 +117,111 @@ class DatabaseSchema:
             )
         """,
         
+        'social_posts_raw': """
+            CREATE TABLE IF NOT EXISTS social_posts_raw (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                post_id TEXT NOT NULL,
+                platform TEXT NOT NULL,
+                subreddit TEXT,
+                title TEXT,
+                text TEXT,
+                author TEXT,
+                created_utc TIMESTAMP NOT NULL,
+                score INTEGER,
+                upvote_ratio REAL,
+                num_comments INTEGER,
+                url TEXT,
+                sentiment_compound REAL,
+                sentiment_pos REAL,
+                sentiment_neg REAL,
+                sentiment_neu REAL,
+                sentiment_label TEXT,
+                ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(post_id, platform)
+            )
+        """,
+        
+        'social_sentiment_daily': """
+            CREATE TABLE IF NOT EXISTS social_sentiment_daily (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                as_of_date DATE NOT NULL,
+                platform TEXT NOT NULL,
+                mentions_count INTEGER DEFAULT 0,
+                sentiment_score REAL,
+                positive_mentions INTEGER DEFAULT 0,
+                negative_mentions INTEGER DEFAULT 0,
+                neutral_mentions INTEGER DEFAULT 0,
+                engagement_score REAL,
+                top_keywords TEXT,
+                source TEXT DEFAULT 'REDDIT',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(as_of_date, platform)
+            )
+        """,
+        
+        'news_articles_raw': """
+            CREATE TABLE IF NOT EXISTS news_articles_raw (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                article_url TEXT NOT NULL UNIQUE,
+                title TEXT,
+                description TEXT,
+                source TEXT,
+                author TEXT,
+                published_at TIMESTAMP NOT NULL,
+                sentiment_compound REAL,
+                sentiment_label TEXT,
+                sentiment_confidence REAL,
+                positive_prob REAL,
+                negative_prob REAL,
+                neutral_prob REAL,
+                ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """,
+        
+        'news_sentiment_daily': """
+            CREATE TABLE IF NOT EXISTS news_sentiment_daily (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                as_of_date DATE NOT NULL,
+                article_count INTEGER DEFAULT 0,
+                avg_sentiment REAL,
+                positive_pct REAL,
+                negative_pct REAL,
+                neutral_pct REAL,
+                top_sources TEXT,
+                top_keywords TEXT,
+                source TEXT DEFAULT 'NEWSAPI',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(as_of_date)
+            )
+        """,
+        
+        'search_trends_raw': """
+            CREATE TABLE IF NOT EXISTS search_trends_raw (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts_utc TIMESTAMP NOT NULL,
+                keyword TEXT NOT NULL,
+                interest_score REAL NOT NULL,
+                geo TEXT DEFAULT '',
+                timeframe TEXT,
+                ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(ts_utc, keyword, geo)
+            )
+        """,
+        
+        'search_interest_daily': """
+            CREATE TABLE IF NOT EXISTS search_interest_daily (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                as_of_date DATE NOT NULL,
+                keyword TEXT NOT NULL,
+                interest_score REAL NOT NULL,
+                interest_change_pct REAL,
+                related_queries TEXT,
+                source TEXT DEFAULT 'GOOGLE_TRENDS',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(as_of_date, keyword)
+            )
+        """,
+        
         'schema_version': """
             CREATE TABLE IF NOT EXISTS schema_version (
                 version INTEGER PRIMARY KEY,
@@ -143,6 +248,22 @@ class DatabaseSchema:
         "CREATE INDEX IF NOT EXISTS idx_funding_asset ON funding_rates_snapshots(asset)",
         "CREATE INDEX IF NOT EXISTS idx_oi_date ON open_interest_daily(as_of_date)",
         "CREATE INDEX IF NOT EXISTS idx_oi_asset ON open_interest_daily(asset)",
+        
+        # Phase 3 indexes - raw data tables
+        "CREATE INDEX IF NOT EXISTS idx_social_raw_post_id ON social_posts_raw(post_id)",
+        "CREATE INDEX IF NOT EXISTS idx_social_raw_platform ON social_posts_raw(platform)",
+        "CREATE INDEX IF NOT EXISTS idx_social_raw_created ON social_posts_raw(created_utc)",
+        "CREATE INDEX IF NOT EXISTS idx_news_raw_url ON news_articles_raw(article_url)",
+        "CREATE INDEX IF NOT EXISTS idx_news_raw_published ON news_articles_raw(published_at)",
+        "CREATE INDEX IF NOT EXISTS idx_search_raw_ts ON search_trends_raw(ts_utc)",
+        "CREATE INDEX IF NOT EXISTS idx_search_raw_keyword ON search_trends_raw(keyword)",
+        
+        # Phase 3 indexes - aggregated tables
+        "CREATE INDEX IF NOT EXISTS idx_social_date ON social_sentiment_daily(as_of_date)",
+        "CREATE INDEX IF NOT EXISTS idx_social_platform ON social_sentiment_daily(platform)",
+        "CREATE INDEX IF NOT EXISTS idx_news_date ON news_sentiment_daily(as_of_date)",
+        "CREATE INDEX IF NOT EXISTS idx_search_date ON search_interest_daily(as_of_date)",
+        "CREATE INDEX IF NOT EXISTS idx_search_keyword ON search_interest_daily(keyword)",
     ]
     
     def __init__(self, db_path: str):
