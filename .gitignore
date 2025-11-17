@@ -30,7 +30,7 @@ ENV/
 .env
 
 # Database
-*.db
+
 *.db-journal
 *.sqlite
 *.sqlite3
@@ -39,8 +39,6 @@ ENV/
 logs/
 *.log
 
-# CSV Backups
-data/backups/*.csv
 
 # IDE
 .vscode/
