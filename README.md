@@ -1,69 +1,49 @@
-# 📊 Crypto Market Intelligence Dashboard
+# Crypto Market Intelligence Dashboard
 
 Data-driven crypto market analysis combining real-time data with AI reasoning for actionable trading insights.
 
-**Status:** ✅ **Phase 1, 2 & 3 OPERATIONAL** - Production-ready multi-source data ingestion with NLP sentiment analysis.
+**Status:** Phase 1, 2 & 3 OPERATIONAL
 
-## 🚀 Quick Start
+## Data Sources and Tables
 
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure API key
-echo "SOSOVALUE_API_KEY=your_key" > .env
-
-# Run ingestion
-python3 main.py
-```
-
-**Get API key:** https://sosovalue.xyz/ (free)
-
-## 📊 Data Sources
-
-### Phase 1 & 2: Market Data
+### Market Data
 | Source | Data | Status |
 |--------|------|--------|
-| **CoinGecko** | BTC/ETH prices, volume, market cap | ✅ Active |
-| **Alternative.me** | Fear & Greed Index | ✅ Active |
-| **SoSoValue** | ETF flows (300 days) | ✅ Active |
-| **Binance Futures** | Funding rates, open interest | ✅ Active |
+| **CoinGecko** | BTC/ETH prices, volume, market cap | Active |
+| **Alternative.me** | Fear & Greed Index | Active |
+| **SoSoValue** | ETF flows (300 days) | Active |
+| **Binance Futures** | Funding rates, open interest | Active |
 
-### Phase 3: NLP & Sentiment
-| Source | Data | Status |
-|--------|------|--------|
-| **Reddit** | Social sentiment (VADER) | 🔧 Optional |
-| **NewsAPI** | News sentiment (FinBERT) | 🔧 Optional |
-| **Google Trends** | Search interest | 🔧 Optional |
-
-## 💾 Database
-
-SQLite database with 16 tables (raw + aggregated):
-
-**Phase 1:**
+### Tables
+#### Raw
 - `ohlc_hourly` - Price data with trading sessions
-- `sentiment_daily` - Fear & Greed sentiment
-- `etf_flows_daily` - Institutional flows
 - `daily_market_snapshot` - Consolidated metrics
-
-**Phase 2:**
 - `market_metrics_daily` - Volume, dominance, market cap
 - `funding_rates_snapshots` - Derivatives funding rates
+#### Aggregated
 - `open_interest_daily` - Futures open interest
+- `sentiment_daily` - Fear & Greed sentiment
+- `etf_flows_daily` - Institutional flows
 
-**Phase 3 (Raw Data):**
-- `social_posts_raw` - Individual Reddit posts with sentiment
+### NLP & Sentiment
+| Source | Data | Status |
+|--------|------|--------|
+| **Reddit** | Social sentiment (VADER) - RSS/API | Active |
+| **Twitter/X** | Social sentiment (VADER) | Active |
+| **NewsAPI** | News sentiment (FinBERT) | Active |
+| **Google Trends** | Search interest | Optional |
+
+### Tables
+#### Raw
+- `social_posts_raw` - Individual Reddit/Twitter posts with sentiment
 - `news_articles_raw` - Individual news articles with sentiment
 - `search_trends_raw` - Raw Google Trends data points
-
-**Phase 3 (Aggregated):**
-- `social_sentiment_daily` - Reddit sentiment & engagement
+#### Aggregated
+- `social_sentiment_daily` - Reddit/Twitter sentiment & engagement
 - `news_sentiment_daily` - News article sentiment (FinBERT)
 - `search_interest_daily` - Google Trends search data
 
-**Architecture:** Phase 3 follows Phase 1's pattern of storing raw data before aggregation, enabling historical reprocessing with different sentiment analyzers without re-fetching from APIs.
-
-## 🎯 Commands
+## Commands
 
 ```bash
 # First time setup (fetch 300 days of historical data)
@@ -82,16 +62,7 @@ python3 test_pipeline.py
 streamlit run app.py
 ```
 
-## ⏰ Recommended Schedule
-
-**Daily sync at 3 AM UTC** (after all data sources update):
-
-```bash
-# Add to crontab
-0 3 * * * cd /path/to/crypto_tracker && python3 main.py
-```
-
-## 📁 Project Structure
+## Project Structure
 
 ```
 crypto_tracker/
@@ -104,12 +75,12 @@ crypto_tracker/
 └── data/                  # SQLite + backups
 ```
 
-## 📚 Documentation
+## Documentation
 
 - **AGENTS.md** - Complete project specification, architecture, and setup
 - **README.md** - This file (quick reference)
 
-## ⚙️ Configuration
+## Configuration
 
 Settings in `.env`:
 
@@ -130,53 +101,34 @@ REDDIT_CLIENT_ID=your_reddit_client_id
 REDDIT_CLIENT_SECRET=your_reddit_secret
 REDDIT_USER_AGENT=CryptoIntelDashboard/1.0
 NEWSAPI_KEY=your_newsapi_key
+TWITTER_BEARER_TOKEN=your_twitter_bearer_token
 
 # Phase 3 Feature Flags (Opt-in)
 ENABLE_SOCIAL_SENTIMENT=false
+ENABLE_REDDIT_RSS=false
+ENABLE_TWITTER_SENTIMENT=false
 ENABLE_NEWS_SENTIMENT=false
 ENABLE_SEARCH_TRENDS=false
 ```
 
 ### Getting API Keys
 
-**Reddit API** (for social sentiment):
-1. Go to https://www.reddit.com/prefs/apps
-2. Create an app (script type)
-3. Copy client ID and secret
+**Reddit RSS** (for social sentiment - no API key required):
+- No API key needed! Set `ENABLE_REDDIT_RSS=true` to use public JSON endpoints
+- Alternatively, use Reddit API: https://www.reddit.com/prefs/apps (create script app)
+
+**Twitter/X** (for social sentiment):
+1. Go to https://developer.twitter.com/
+2. Add `TWITTER_BEARER_TOKEN` to `.env` and set `ENABLE_TWITTER_SENTIMENT=true`
 
 **NewsAPI** (for news sentiment):
 1. Go to https://newsapi.org/
-2. Sign up for free tier (100 requests/day)
-3. Copy API key
 
 **Google Trends** - No API key required!
 
-## 🔧 Features
-
-**Phase 1 & 2:**
-- ✅ Automated data ingestion from 5 sources
-- ✅ SQLite database with idempotent writes
-- ✅ Retry logic and rate limiting
-- ✅ CSV backups and comprehensive logging
-- ✅ Trading session classification
-- ✅ Derivatives data (funding rates, open interest)
-
-**Phase 3 (NLP & Sentiment):**
-- ✅ Reddit social sentiment analysis (VADER)
-- ✅ Financial news sentiment (FinBERT)
-- ✅ Google Trends search interest tracking
-- ✅ Multi-platform sentiment aggregation
-- ✅ Keyword extraction and engagement scoring
-- ✅ Graceful degradation (optional connectors)
-- ✅ Comprehensive unit test coverage
-
-## 📝 Logs
-
-Check `logs/ingestion_YYYYMMDD.log` for detailed execution information.
-
 ---
 
-## 🧪 Testing
+## Testing
 
 Run unit tests:
 ```bash
@@ -186,26 +138,3 @@ PYTHONPATH=. python3 tests/test_phase3_schema.py
 # Test sentiment analyzer
 PYTHONPATH=. python3 tests/test_sentiment_analyzer.py
 ```
-
----
-
-## 📦 Installation
-
-Install Phase 3 dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-Note: Phase 3 dependencies include:
-- `praw` - Reddit API
-- `newsapi-python` - NewsAPI client
-- `pytrends` - Google Trends
-- `transformers` - FinBERT model
-- `torch` - PyTorch for FinBERT
-- `vaderSentiment` - VADER sentiment analyzer
-
----
-
-**Phase 1, 2 & 3 Complete** ✅ | **Next: Phase 4 - Dashboarding & Visualization** 🚀
-
-For detailed documentation, see `AGENTS.md`
