@@ -7,6 +7,8 @@ from src.connectors.etf_flows import ETFFlowsConnector
 from src.connectors.market_metrics import MarketMetricsConnector
 from src.connectors.binance_futures import BinanceFuturesConnector
 from src.connectors.reddit_connector import RedditConnector
+from src.connectors.reddit_rss_connector import RedditRSSConnector
+from src.connectors.twitter_connector import TwitterConnector
 from src.connectors.news_connector import NewsConnector
 from src.connectors.trends_connector import TrendsConnector
 from src.storage.database import MarketDatabase
@@ -60,9 +62,12 @@ class IngestionPipeline:
         
         # Initialize Phase 3 connectors
         self.reddit = None
+        self.reddit_rss = None
+        self.twitter = None
         self.news = None
         self.trends = None
         
+        # Reddit: Try API first, fallback to RSS if API unavailable
         if Config.ENABLE_SOCIAL_SENTIMENT and Config.REDDIT_CLIENT_ID:
             try:
                 self.reddit = RedditConnector(
@@ -71,9 +76,28 @@ class IngestionPipeline:
                     user_agent=Config.REDDIT_USER_AGENT,
                     rate_limit_delay=2.0
                 )
-                logger.info("Reddit connector enabled")
+                logger.info("Reddit API connector enabled")
             except Exception as e:
-                logger.warning(f"Reddit connector initialization failed: {e}")
+                logger.warning(f"Reddit API connector initialization failed: {e}")
+        
+        # Reddit RSS fallback (no API key required)
+        if Config.ENABLE_REDDIT_RSS or (Config.ENABLE_SOCIAL_SENTIMENT and not self.reddit):
+            try:
+                self.reddit_rss = RedditRSSConnector(rate_limit_delay=2.0)
+                logger.info("Reddit RSS connector enabled (no API key required)")
+            except Exception as e:
+                logger.warning(f"Reddit RSS connector initialization failed: {e}")
+        
+        # Twitter connector
+        if Config.ENABLE_TWITTER_SENTIMENT and Config.TWITTER_BEARER_TOKEN:
+            try:
+                self.twitter = TwitterConnector(
+                    bearer_token=Config.TWITTER_BEARER_TOKEN,
+                    rate_limit_delay=1.0
+                )
+                logger.info("Twitter connector enabled")
+            except Exception as e:
+                logger.warning(f"Twitter connector initialization failed: {e}")
         
         if Config.ENABLE_NEWS_SENTIMENT and Config.NEWSAPI_KEY:
             try:
@@ -331,6 +355,7 @@ class IngestionPipeline:
     def ingest_social_sentiment(self, days: int = 1) -> Dict[str, Any]:
         """
         Ingest social sentiment from Reddit (raw posts + aggregated sentiment)
+        Uses Reddit API if available, otherwise falls back to RSS
         
         Args:
             days: Number of days to fetch (default: 1)
@@ -338,17 +363,21 @@ class IngestionPipeline:
         Returns:
             Dictionary with ingestion statistics
         """
-        if not self.reddit:
-            logger.info("Reddit connector disabled, skipping social sentiment")
+        # Use Reddit API if available, otherwise use RSS
+        reddit_connector = self.reddit if self.reddit else self.reddit_rss
+        
+        if not reddit_connector:
+            logger.info("Reddit connectors disabled, skipping social sentiment")
             return {'success': True, 'raw_records': 0, 'aggregated_records': 0, 'errors': [], 'skipped': True}
         
-        logger.info(f"Starting social sentiment ingestion (last {days} days)")
+        connector_type = "API" if self.reddit else "RSS"
+        logger.info(f"Starting social sentiment ingestion via Reddit {connector_type} (last {days} days)")
         stats = {'success': False, 'raw_records': 0, 'aggregated_records': 0, 'errors': []}
         
         try:
             # Step 1: Fetch and store raw posts
-            logger.info("Fetching raw social posts...")
-            raw_posts = self.reddit.fetch_raw_posts(days_back=days)
+            logger.info(f"Fetching raw social posts via Reddit {connector_type}...")
+            raw_posts = reddit_connector.fetch_raw_posts(days_back=days)
             
             if raw_posts:
                 # Insert raw posts into database
@@ -487,6 +516,60 @@ class IngestionPipeline:
         
         return stats
     
+    def ingest_twitter_sentiment(self, days: int = 1) -> Dict[str, Any]:
+        """
+        Ingest Twitter sentiment (raw tweets + aggregated sentiment)
+        
+        Args:
+            days: Number of days to fetch (default: 1)
+        
+        Returns:
+            Dictionary with ingestion statistics
+        """
+        if not self.twitter:
+            logger.info("Twitter connector disabled, skipping Twitter sentiment")
+            return {'success': True, 'raw_records': 0, 'aggregated_records': 0, 'errors': [], 'skipped': True}
+        
+        logger.info(f"Starting Twitter sentiment ingestion (last {days} days)")
+        stats = {'success': False, 'raw_records': 0, 'aggregated_records': 0, 'errors': []}
+        
+        try:
+            # Step 1: Fetch and store raw tweets
+            logger.info("Fetching raw tweets...")
+            raw_tweets = self.twitter.fetch_raw_tweets(days_back=days)
+            
+            if raw_tweets:
+                # Insert raw tweets into database (using same table as Reddit posts)
+                raw_count = self.db.insert_social_posts_raw(raw_tweets)
+                stats['raw_records'] = raw_count
+                logger.info(f"Stored {raw_count} raw tweets")
+                
+                # Step 2: Compute aggregated sentiment from raw data
+                logger.info("Computing aggregated sentiment from raw tweets...")
+                from datetime import timedelta
+                today = datetime.now()
+                
+                for i in range(days):
+                    date = (today - timedelta(days=i)).strftime('%Y-%m-%d')
+                    try:
+                        # Use the same aggregation method but filter by platform='twitter'
+                        self.db.compute_social_sentiment_from_raw(date, platform='twitter')
+                        stats['aggregated_records'] += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to compute Twitter sentiment for {date}: {e}")
+                        stats['errors'].append(f"Aggregation {date}: {str(e)}")
+                
+                stats['success'] = True
+                logger.info(f"Twitter sentiment ingestion complete: {raw_count} raw tweets, {stats['aggregated_records']} daily aggregates")
+            else:
+                logger.warning("No Twitter sentiment data to ingest")
+            
+        except Exception as e:
+            logger.error(f"Twitter sentiment ingestion failed: {e}")
+            stats['errors'].append(str(e))
+        
+        return stats
+    
     def compute_snapshots(self, days: int = 7) -> Dict[str, Any]:
         """
         Compute daily market snapshots
@@ -553,6 +636,7 @@ class IngestionPipeline:
             'funding_rates': {},
             'open_interest': {},
             'social_sentiment': {},
+            'twitter_sentiment': {},
             'news_sentiment': {},
             'search_trends': {},
             'snapshots': {},
@@ -592,20 +676,24 @@ class IngestionPipeline:
         # Phase 3 Ingestion
         logger.info("\n=== PHASE 3: NLP & Sentiment Analysis ===")
         
-        # Step 7: Ingest social sentiment
-        logger.info(f"\n[7/10] Ingesting social sentiment (last {nlp_days} days)...")
+        # Step 7: Ingest social sentiment (Reddit)
+        logger.info(f"\n[7/11] Ingesting social sentiment (Reddit) (last {nlp_days} days)...")
         results['social_sentiment'] = self.ingest_social_sentiment(days=nlp_days)
         
-        # Step 8: Ingest news sentiment
-        logger.info(f"\n[8/10] Ingesting news sentiment (last {nlp_days} days)...")
+        # Step 8: Ingest Twitter sentiment
+        logger.info(f"\n[8/11] Ingesting Twitter sentiment (last {nlp_days} days)...")
+        results['twitter_sentiment'] = self.ingest_twitter_sentiment(days=nlp_days)
+        
+        # Step 9: Ingest news sentiment
+        logger.info(f"\n[9/11] Ingesting news sentiment (last {nlp_days} days)...")
         results['news_sentiment'] = self.ingest_news_sentiment(days=nlp_days)
         
-        # Step 9: Ingest search trends
-        logger.info(f"\n[9/10] Ingesting search trends (last 7 days)...")
+        # Step 10: Ingest search trends
+        logger.info(f"\n[10/11] Ingesting search trends (last 7 days)...")
         results['search_trends'] = self.ingest_search_trends(days=7)
         
-        # Step 10: Compute daily snapshots
-        logger.info("\n[10/10] Computing daily snapshots...")
+        # Step 11: Compute daily snapshots
+        logger.info("\n[11/11] Computing daily snapshots...")
         results['snapshots'] = self.compute_snapshots(days=7)
         
         # Overall success if at least Phase 1 core data succeeded

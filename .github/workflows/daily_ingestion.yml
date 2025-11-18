@@ -53,6 +53,7 @@ jobs:
           REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
           REDDIT_USER_AGENT: ${{ secrets.REDDIT_USER_AGENT }}
           NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
+          TWITTER_BEARER_TOKEN: ${{ secrets.TWITTER_BEARER_TOKEN }}
           
           # Configuration
           RATE_LIMIT_DELAY: "1.5"
@@ -63,9 +64,16 @@ jobs:
           ENABLE_MARKET_METRICS: "true"
           ENABLE_DERIVATIVES_DATA: "true"
           
-          # Phase 3 Feature Flags (set to true if API keys are configured)
-          ENABLE_SOCIAL_SENTIMENT: ${{ secrets.REDDIT_CLIENT_ID != '' && 'true' || 'false' }}
+          # Phase 3 Feature Flags
+          # Reddit: Enable social sentiment (will use API if available, RSS as fallback)
+          # RSS is automatically enabled as fallback in the pipeline, but can be explicitly enabled
+          ENABLE_SOCIAL_SENTIMENT: "true"
+          ENABLE_REDDIT_RSS: ${{ secrets.REDDIT_CLIENT_ID == '' && 'true' || 'false' }}
+          # Twitter: Enable if Bearer Token is configured
+          ENABLE_TWITTER_SENTIMENT: ${{ secrets.TWITTER_BEARER_TOKEN != '' && 'true' || 'false' }}
+          # NewsAPI: Enable if API key is configured
           ENABLE_NEWS_SENTIMENT: ${{ secrets.NEWSAPI_KEY != '' && 'true' || 'false' }}
+          # Google Trends: No API key required
           ENABLE_SEARCH_TRENDS: "true"
         run: |
           if [ "${{ github.event.inputs.mode }}" = "backfill" ]; then

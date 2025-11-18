@@ -793,16 +793,18 @@ class MarketDatabase:
             logger.error(f"Failed to insert search interest: {e}")
             raise
     
-    def compute_social_sentiment_from_raw(self, as_of_date: str) -> None:
+    def compute_social_sentiment_from_raw(self, as_of_date: str, platform: Optional[str] = None) -> None:
         """
         Compute and store daily social sentiment from raw posts
         
         Args:
             as_of_date: Date in YYYY-MM-DD format
+            platform: Optional platform filter ('reddit', 'twitter'). If None, processes all platforms
         """
-        logger.info(f"Computing social sentiment from raw data for {as_of_date}")
+        platform_filter = f"AND platform = '{platform}'" if platform else ""
+        logger.info(f"Computing social sentiment from raw data for {as_of_date}" + (f" (platform={platform})" if platform else ""))
         
-        sql = """
+        sql = f"""
             INSERT OR REPLACE INTO social_sentiment_daily
             (as_of_date, platform, mentions_count, sentiment_score,
              positive_mentions, negative_mentions, neutral_mentions,
@@ -819,7 +821,7 @@ class MarketDatabase:
                     SUM(CASE WHEN sentiment_label = 'NEUTRAL' THEN 1 ELSE 0 END) as neutral_mentions,
                     AVG(score * 1.0 + num_comments * 2.0) as engagement_score
                 FROM social_posts_raw
-                WHERE DATE(created_utc) = ?
+                WHERE DATE(created_utc) = ? {platform_filter}
                 GROUP BY DATE(created_utc), platform
             )
             
@@ -833,7 +835,11 @@ class MarketDatabase:
                 neutral_mentions,
                 engagement_score,
                 '' as top_keywords,
-                'REDDIT' as source
+                CASE 
+                    WHEN platform = 'twitter' THEN 'TWITTER'
+                    WHEN platform LIKE 'reddit%' THEN 'REDDIT_RSS'
+                    ELSE 'REDDIT'
+                END as source
             FROM post_stats
         """
         

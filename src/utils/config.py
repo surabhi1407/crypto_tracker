@@ -57,9 +57,12 @@ class Config:
     REDDIT_USER_AGENT = os.getenv('REDDIT_USER_AGENT', 'CryptoIntelDashboard/1.0')
     
     NEWSAPI_KEY = os.getenv('NEWSAPI_KEY', None)
+    TWITTER_BEARER_TOKEN = os.getenv('TWITTER_BEARER_TOKEN', None)
     
     # Phase 3 Feature Flags
     ENABLE_SOCIAL_SENTIMENT = os.getenv('ENABLE_SOCIAL_SENTIMENT', 'false').lower() == 'true'
+    ENABLE_REDDIT_RSS = os.getenv('ENABLE_REDDIT_RSS', 'false').lower() == 'true'  # Use RSS when API unavailable
+    ENABLE_TWITTER_SENTIMENT = os.getenv('ENABLE_TWITTER_SENTIMENT', 'false').lower() == 'true'
     ENABLE_NEWS_SENTIMENT = os.getenv('ENABLE_NEWS_SENTIMENT', 'false').lower() == 'true'
     ENABLE_SEARCH_TRENDS = os.getenv('ENABLE_SEARCH_TRENDS', 'false').lower() == 'true'
     
@@ -96,7 +99,10 @@ class Config:
             'BINANCE_FUTURES_BASE_URL': cls.BINANCE_FUTURES_BASE_URL,
             'HAS_REDDIT_CREDENTIALS': cls.REDDIT_CLIENT_ID is not None and cls.REDDIT_CLIENT_SECRET is not None,
             'HAS_NEWSAPI_KEY': cls.NEWSAPI_KEY is not None,
+            'HAS_TWITTER_TOKEN': cls.TWITTER_BEARER_TOKEN is not None,
             'ENABLE_SOCIAL_SENTIMENT': cls.ENABLE_SOCIAL_SENTIMENT,
+            'ENABLE_REDDIT_RSS': cls.ENABLE_REDDIT_RSS,
+            'ENABLE_TWITTER_SENTIMENT': cls.ENABLE_TWITTER_SENTIMENT,
             'ENABLE_NEWS_SENTIMENT': cls.ENABLE_NEWS_SENTIMENT,
             'ENABLE_SEARCH_TRENDS': cls.ENABLE_SEARCH_TRENDS
         }
