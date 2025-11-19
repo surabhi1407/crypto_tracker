@@ -1,7 +1,7 @@
 name: Daily Crypto Data Ingestion
 
 on:
-  # Run daily at 3 AM UTC (after all data sources update)
+
   schedule:
     - cron: '0 3 * * *'
   
@@ -20,6 +20,10 @@ on:
 jobs:
   ingest-data:
     runs-on: ubuntu-latest
+    
+    # Permissions for committing back to repository
+    permissions:
+      contents: write  # Required to commit and push database file
     
     # Job-level environment variables (from GitHub repository variables with fallback defaults)
     env:
@@ -47,6 +51,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch full history to enable pushing back
       
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -58,12 +64,18 @@ jobs:
         run: |
           pip install -r requirements.txt
       
-      - name: Download existing database (if exists)
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          name: market-intel-db
-          path: data/
+      - name: Verify database file from repository
+        run: |
+          if [ -f "data/market_intel.db" ]; then
+            echo "✅ Found existing database file in repository"
+            ls -lh data/market_intel.db
+            echo "   Database will be updated with new ingestion data"
+          else
+            echo "ℹ️  No database file found in repository"
+            echo "   A new database will be created during ingestion"
+            # Ensure data directory exists
+            mkdir -p data
+          fi
       
       - name: Run data ingestion
         env:
@@ -87,28 +99,6 @@ jobs:
             python3 main.py
           fi
       
-      - name: Upload database artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: market-intel-db
-          path: data/market_intel.db
-          retention-days: 30
-      
-      - name: Upload CSV backups
-        uses: actions/upload-artifact@v4
-        with:
-          name: csv-backups-${{ github.run_number }}
-          path: data/backups/
-          retention-days: 7
-      
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ingestion-logs-${{ github.run_number }}
-          path: logs/
-          retention-days: 7
-      
       - name: Generate summary report
         if: always()
         run: |
@@ -128,26 +118,66 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "## Database Info" >> $GITHUB_STEP_SUMMARY
             echo "Database size: $(du -h data/market_intel.db | cut -f1)" >> $GITHUB_STEP_SUMMARY
+            echo "Database path: data/market_intel.db" >> $GITHUB_STEP_SUMMARY
           fi
       
-      - name: Commit and push database (optional)
+      - name: Commit and push database to repository
         if: github.ref == 'refs/heads/main' && success()
-        env:
-          COMMIT_DB: ${{ secrets.COMMIT_DB_TO_REPO }}
         run: |
-          if [ "$COMMIT_DB" = "true" ]; then
-            git config --local user.email "github-actions[bot]@users.noreply.github.com"
-            git config --local user.name "github-actions[bot]"
-            
-            git add data/market_intel.db data/backups/
-            
-            if git diff --staged --quiet; then
-              echo "No changes to commit"
-            else
-              git commit -m "chore: daily data ingestion - $(date -u +%Y-%m-%d)"
-              git push
-            fi
-          else
-            echo "Database commit disabled (set COMMIT_DB_TO_REPO secret to 'true' to enable)"
+          echo "📦 Committing updated database to repository..."
+          
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # Stage database file and backups
+          git add data/market_intel.db
+          
+          # Stage CSV backups if they exist and ENABLE_CSV_BACKUP is true
+          if [ "$ENABLE_CSV_BACKUP" = "true" ] && [ -d "data/backups" ] && [ "$(ls -A data/backups 2>/dev/null)" ]; then
+            git add data/backups/
+            echo "   Also staging CSV backup files"
           fi
+          
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "ℹ️  No changes to commit (database is up to date)"
+          else
+            # Show what's being committed
+            echo "📝 Changes to commit:"
+            git diff --staged --stat
+            
+            # Commit with descriptive message
+            COMMIT_MSG="chore: daily data ingestion - $(date -u +%Y-%m-%d)"
+            if [ "${{ github.event.inputs.mode }}" = "backfill" ]; then
+              COMMIT_MSG="chore: backfill data ingestion - $(date -u +%Y-%m-%d)"
+            fi
+            
+            git commit -m "$COMMIT_MSG"
+            echo "✅ Committed changes"
+            
+            # Push to repository
+            git push
+            echo "✅ Pushed database to repository"
+          fi
+      
+      # Optional: Upload artifacts as backup (not primary storage)
+      - name: Upload database artifact (backup)
+        if: success()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: market-intel-db-backup
+          path: data/market_intel.db
+          retention-days: 7
+          if-no-files-found: warn
+      
+      - name: Upload logs artifact
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: ingestion-logs-${{ github.run_number }}
+          path: logs/
+          retention-days: 7
+          if-no-files-found: warn
 
